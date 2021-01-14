@@ -16,7 +16,7 @@ sdcpy
 
 
 
-Linear and non-linear Time Series Analysis methods.
+Scale Dependent Correlation (SDC) analysis [1, 2] in Python.
 
 
 * Free software: MIT license
@@ -32,10 +32,17 @@ Features
 
 * TO DO
 
-Features
+Installation
 --------
 
 While the package is still not available for instalation via Pypi, you can install it directly from the repo via:
 ::
 
-   pip install https://gitlab.com/AlFontal/sdcpy
+   pip install https://github.com/AlFontal/sdcpy
+
+References
+--------
+
+1. Rodríguez-Arias, Miquel Àngel, and Xavier Rodó. "A primer on the study of transitory dynamics in ecological series using the scale-dependent correlation analysis." Oecologia 138, no. 4 (2004): 485-504.
+
+2. Rodó, Xavier, and Miquel-Àngel Rodríguez-Arias. "A new method to detect transitory signatures and local time/space variability structures in the climate system: the scale-dependent correlation analysis." Climate Dynamics 27, no. 5 (2006): 441-458.
