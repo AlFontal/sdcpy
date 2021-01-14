@@ -28,7 +28,7 @@ Features
 
 * `Scale Dependent Correlation`_.
 
-.. _Scale Dependent Correlation: https://github.com/AlFontal/sdcpy/-/blob/master/sdcpy/scale_dependent_correlation.py
+.. _Scale Dependent Correlation: https://github.com/AlFontal/sdcpy/blob/master/sdcpy/scale_dependent_correlation.py
 
 * TO DO
 
