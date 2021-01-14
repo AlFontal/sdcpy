@@ -4,10 +4,10 @@ sdcpy
 
 
 .. image:: https://img.shields.io/pypi/v/sdcpy.svg
-        :target: https://pypi.python.org/pypi/sdcpy
+        :target: https://pypi.python.com/pypi/sdcpy
 
 .. image:: https://img.shields.io/travis/AlFontal/sdcpy.svg
-        :target: https://travis-ci.org/AlFontal/sdcpy
+        :target: https://travis-ci.com/AlFontal/sdcpy
 
 .. image:: https://readthedocs.org/projects/sdcpy/badge/?version=latest
         :target: https://sdcpy.readthedocs.io/en/latest/?badge=latest
