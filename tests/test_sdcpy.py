@@ -6,7 +6,7 @@
 import pytest
 
 
-from sdcpy import scale_dependent_correlation
+from sdcpy.scale_dependent_correlation import SDCAnalysis
 
 
 @pytest.fixture
