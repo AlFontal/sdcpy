@@ -3,6 +3,7 @@ url = "https://pypi.python.org/simple"
 verify_ssl = true
 
 [dev-packages]
+alabaster = "*"
 bumpversion = "*"
 wheel = "*"
 watchdog = "*"
@@ -23,3 +24,4 @@ plotnine = "*"
 seaborn = "*"
 scipy = "*"
 tqdm = "*"
+alabaster = "*"
