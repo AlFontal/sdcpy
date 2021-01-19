@@ -35,10 +35,10 @@ Features
 Installation
 -------------
 
-While the package is still not available for instalation via Pypi, you can install it directly from the repo via:
+To install via `pip` just run on a terminal:
 ::
 
-   pip install https://github.com/AlFontal/sdcpy
+   pip install sdcpy
 
 References
 -----------
