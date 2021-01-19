@@ -2,8 +2,6 @@ language: python
 dist: xenial
 python:
 - '3.8'
-- '3.7'
-- '3.6'
 install: pip install -U tox-travis
 script: tox
 deploy:
@@ -12,3 +10,5 @@ deploy:
   password:
     secure: YoQVZh1BRkPObgWqcmU7V4jFgNZ8SruXpu5OBWb2//fj+EjSF4uYdMxTqrNuxJWAHntb2g1TbWo80tLJ6jtyojDqrIvF3dxoeTeI0OWXMkAm938sN9Mr61rZJ3SFw1EGgVJjl5xYb4mppmUvkfPMlp71FynIT3XGZW16vbphMb/AME9FAJprn97BH7baSagqGj9kHxCwbZkpdtaIrA8sKZOSqX13Ba800GpO50/9SFHy7na6Lklr+jMVStcvztHeBGuC14gk7U8vy51cpGfX3Vl5xpToiWSYZUnovozbcgoWNoqSlmsfeP6twNu2fc3lA6XiFsSQ+iL3TWtoO43zQfwjpZILeCeLNRRHsESz2X+Nr+hWNjtgzRfvuJLwTWQAGw+1kP2c6N96cD6eG5pmGIjncrn0/o9FQYBBZLI4cP2E21P2Iuwne9Jp6dL/UVFT4O83zDs4YNm1JZIhZ5ar1TWhmDs1UozQ29TqUA+otVcYQdqbOuJrJe3Brzued6htYt8FgbcTvCg6hS/kJUCfF+qpcGouhQnKnYe4ucJHCj72k2jKz2tsW4yVsIgHpREwbjdEosUxcxoEIiqHoqopFyUQm6JGyg83cXPJLaKvZBy0jjUJmyZhRJJL5MznM6D/uUxfSwdEcRzCzIZ3CTcv+4QsWiBPC8cmOQfS6jbZSSs=
   edge: true
+  on:
+    branch: master
