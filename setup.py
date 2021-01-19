@@ -27,7 +27,7 @@ setup(
         'Natural Language :: English',
         'Programming Language :: Python :: 3.8',
     ],
-    description="Linear and non-linear Time Series Analysis methods.",
+    description="Scale dependent correlation in Python.",
     install_requires=requirements,
     license="MIT license",
     long_description=readme + '\n\n' + history,
