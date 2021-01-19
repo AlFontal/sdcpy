@@ -33,7 +33,7 @@ Features
 * TO DO
 
 Installation
---------
+-------------
 
 While the package is still not available for instalation via Pypi, you can install it directly from the repo via:
 ::
@@ -41,7 +41,7 @@ While the package is still not available for instalation via Pypi, you can insta
    pip install https://github.com/AlFontal/sdcpy
 
 References
---------
+-----------
 
 1. Rodríguez-Arias, Miquel Àngel, and Xavier Rodó. "A primer on the study of transitory dynamics in ecological series using the scale-dependent correlation analysis." Oecologia 138, no. 4 (2004): 485-504.
 
