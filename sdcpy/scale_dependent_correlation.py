@@ -21,6 +21,9 @@ RECOGNIZED_METHODS = {
     'kendall': lambda x, y: stats.kendalltau(x, y),
 }
 
+CONSTANT_WARNING = {'pearson': stats.PearsonRConstantInputWarning,
+                    'spearman': stats.SpearmanRConstantInputWarning}
+
 
 def generate_correlation_map(x: np.ndarray, y: np.ndarray, method: str = 'pearson') -> np.ndarray:
     """
@@ -119,6 +122,7 @@ def compute_sdc(ts1: np.ndarray, ts2: np.ndarray, fragment_size: int, n_permutat
     """
 
     method_fun = RECOGNIZED_METHODS[method] if method in RECOGNIZED_METHODS else method
+    # TODO: Proper calculation of number of iterations considering the range of lags selected
     n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
     n_root = int(np.sqrt(n_permutations).round())
     sdc_array = np.empty(shape=(n_iterations, 7))
@@ -135,7 +139,10 @@ def compute_sdc(ts1: np.ndarray, ts2: np.ndarray, fragment_size: int, n_permutat
                 fragment_1 = ts1[start_1: stop_1]
                 fragment_2 = ts2[start_2: stop_2]
                 # Compute the correlation/distance across both fragments
-                r, p_value = method_fun(fragment_1, fragment_2)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    warnings.warn("Constant Fragment", CONSTANT_WARNING[method])
+                    r, p_value = method_fun(fragment_1, fragment_2)
                 if permutations:
                     # Randomize both fragments and compute their correlations.
                     if method.lower() in ['pearson', 'spearman']:
@@ -153,11 +160,11 @@ def compute_sdc(ts1: np.ndarray, ts2: np.ndarray, fragment_size: int, n_permutat
                         p_value = 1 - stats.percentileofscore(permuted_scores, r) / 100
 
                 sdc_array[i] = [start_1, stop_1, start_2, stop_2, lag, r, p_value]
+                i += 1
             progress_bar.update(1)
-            i += 1
 
     progress_bar.close()
-    sdc_df = pd.DataFrame(sdc_array, columns=['start_1', 'stop_1', 'start_2', 'stop_2', 'lag', 'r', 'p_value'])
+    sdc_df = pd.DataFrame(sdc_array[:i], columns=['start_1', 'stop_1', 'start_2', 'stop_2', 'lag', 'r', 'p_value'])
 
     return sdc_df
 
