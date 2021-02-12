@@ -267,56 +267,75 @@ class SDCAnalysis:
         return cls(ts1=ts1.ts1, ts2=ts2.ts2, fragment_size=fragment_size, n_permutations=n_permutations, method=method,
                    sdc_df=sdc_df)
 
-    def get_ranges_df(self, bin_size: int = 3, alpha: float = .05, min_bin=None, max_bin=None):
-        min_bin = int(np.floor(self.ts1.min())) if min_bin is None else min_bin
-        max_bin = int(np.ceil(self.ts1.max())) if max_bin is None else max_bin
-        df = (self.sdc_df
+    def get_ranges_df(self, bin_size: int = 3, alpha: float = .05, min_bin=None, max_bin=None, threshold: float = .0,
+                      ts: int = 1):
+        min_bin = int(np.floor(self.__dict__[f'ts{ts}'].min())) if min_bin is None else min_bin
+        max_bin = int(np.ceil(self.__dict__[f'ts{ts}'].max())) if max_bin is None else max_bin
+        name = self.__dict__[f'ts{ts}'].name
+        df = (self
+              .sdc_df
               .dropna()
               .assign(date_range=lambda dd:
-                      dd.date_1.apply(lambda x: pd.date_range(x, x + pd.to_timedelta(self.fragment_size, unit='days'))))
+        dd[f'date_{ts}'].apply(lambda x: pd.date_range(x, x + pd.to_timedelta(self.fragment_size, unit='days'))))
               [['r', 'p_value', 'date_range']]
               .explode('date_range')
               .rename(columns={'date_range': 'date'})
-              .merge(self.ts1.reset_index().rename(columns={'date_1': 'date', 'ts1': 'value'}))
-              .assign(cat_value=lambda dd: pd.cut(dd.value, bins=list(range(min_bin, max_bin + bin_size, bin_size)),
-                                                  precision=0))
-              )
-
-        n_df = df.groupby('cat_value').size().rename('n').reset_index()
-        df = (df.assign(significant=lambda dd: dd.p_value < alpha)
+              .reset_index()
+              .rename(columns={'index': 'comparison_id'})
+              .merge(self.__dict__[f'ts{ts}'].reset_index().rename(columns={f'date_{ts}': 'date', name: 'value'}))
+              .assign(cat_value=lambda dd:
+        pd.cut(dd.value, bins=list(range(min_bin, max_bin + bin_size, bin_size)), precision=0))
+              .groupby(['comparison_id'])
+              .apply(lambda dd: dd.cat_value.value_counts(True))
+              .loc[lambda x: x > threshold]
+              .reset_index()
+              .drop(columns='cat_value')
+              .rename(columns={'level_1': 'cat_value'})
+              .merge(self.sdc_df
+                     .reset_index()
+                     .rename(columns={'index': 'comparison_id'})
+                     [['r', 'p_value', 'comparison_id']])
+              .assign(significant=lambda dd: dd.p_value < alpha)
               .assign(direction=lambda dd: (dd.significant.astype(int) * ((dd.r > 0).astype(int) + 1))
                       .replace({0: 'NS', 1: 'Negative', 2: 'Positive'}))
               .assign(direction=lambda dd: pd.Categorical(dd.direction, categories=['Positive', 'Negative', 'NS'],
                                                           ordered=True))
               .groupby('cat_value')
-              .apply(lambda dd: dd.direction.value_counts().rename('counts').reset_index())
+              .apply(lambda dd: dd['direction'].value_counts().rename('counts').reset_index())
               .reset_index()
               .drop(columns='level_1')
               .rename(columns={'index': 'direction'})
-              .merge(n_df)
-              .groupby('cat_value')
-              .apply(lambda dd: dd.assign(freq=(dd.counts / dd.n).fillna(0)))
-              .assign(label=lambda dd: (dd.freq * 100).round(1).astype(str) + ' %')
+              .pipe(lambda dd:
+                    dd.merge(dd.groupby('cat_value', as_index=False)['counts'].sum().rename(columns={'counts': 'n'}),
+                             on='cat_value'))
+              .assign(freq=lambda dd: (dd['counts'] / dd['n']).fillna(0))
+              .assign(label=lambda dd: (dd['freq'] * 100).round(1).astype(str) + ' %')
               )
+
         return df
 
-    def plot_range_comparison(self, xlabel: str = '', figsize: Tuple[int] = (7, 3), **kwargs):
+    def plot_range_comparison(self, xlabel: str = '', figsize: Tuple[int] = (7, 3), add_text_label: bool = True,
+                              **kwargs):
         df = self.get_ranges_df(**kwargs)
         fig = (p9.ggplot(df)
                + p9.aes('cat_value', 'counts', fill='direction')
                + p9.geom_col(alpha=.8)
-               + p9.theme(figure_size=figsize)
+               + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=45))
                + p9.scale_fill_manual(['#3f7f93', '#da3b46', '#4d4a4a'])
                + p9.labs(x=xlabel, y='Number of Comparisons', fill='R')
                )
 
-        if df.loc[df.direction == 'Positive'].loc[df.counts > 0].size > 0:
-            fig += p9.geom_text(p9.aes(label='label', x='cat_value', y='n + max(n) * .15'), inherit_aes=False, size=9,
-                                data=df.loc[df.direction == 'Positive'].loc[df.counts > 0], color='#3f7f93')
-        if df.loc[df.direction == 'Negative'].loc[df.counts > 0].size > 0:
-            fig += p9.geom_text(p9.aes(label='label', x='cat_value', y='n + max(n) * .05'), inherit_aes=False, size=9,
-                                data=df.loc[df.direction == 'Negative'].loc[df.counts > 0], color='#da3b46')
-        return fig.draw()
+        if add_text_label:
+            if df.loc[df.direction == 'Positive'].loc[df.counts > 0].size > 0:
+                fig += p9.geom_text(p9.aes(label='label', x='cat_value', y='n + max(n) * .15'),
+                                    inherit_aes=False, size=9,
+                                    data=df.loc[df.direction == 'Positive'].loc[df.counts > 0], color='#3f7f93')
+            if df.loc[df.direction == 'Negative'].loc[df.counts > 0].size > 0:
+                fig += p9.geom_text(p9.aes(label='label', x='cat_value', y='n + max(n) * .05'),
+                                    inherit_aes=False, size=9,
+                                    data=df.loc[df.direction == 'Negative'].loc[df.counts > 0], color='#da3b46')
+
+        return fig
 
     def plot_consecutive(self, alpha: float = .05, **kwargs):
         f = (self.sdc_df
