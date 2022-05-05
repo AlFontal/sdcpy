@@ -4,7 +4,7 @@ sdcpy
 
 
 .. image:: https://img.shields.io/pypi/v/sdcpy.svg
-        :target: https://pypi.python.com/pypi/sdcpy
+        :target: https://pypi.org/project/sdcpy/
 
 .. image:: https://img.shields.io/travis/AlFontal/sdcpy.svg
         :target: https://travis-ci.com/AlFontal/sdcpy
