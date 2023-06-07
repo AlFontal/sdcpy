@@ -18,7 +18,6 @@ plt.style.use('seaborn-v0_8-white')
 RECOGNIZED_METHODS = {
     'pearson': lambda x, y: stats.pearsonr(x, y),
     'spearman': lambda x, y: stats.spearmanr(x, y),
-    'kendall': lambda x, y: stats.kendalltau(x, y),
 }
 
 CONSTANT_WARNING = {'pearson': stats.ConstantInputWarning,
