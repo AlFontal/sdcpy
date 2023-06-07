@@ -1,0 +1,5 @@
+.eggs/*
+.tox/*
+*/__pycache__/*
+sdcpy.egg-info/*
+build/*
