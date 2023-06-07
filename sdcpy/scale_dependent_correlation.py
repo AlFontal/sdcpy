@@ -13,7 +13,7 @@ from scipy.stats.mstats import rankdata
 from tqdm.auto import tqdm
 from typing import Callable, Union, Optional, Tuple
 
-plt.style.use('seaborn-white')
+plt.style.use('seaborn-v0_8-white')
 
 RECOGNIZED_METHODS = {
     'pearson': lambda x, y: stats.pearsonr(x, y),
@@ -21,8 +21,8 @@ RECOGNIZED_METHODS = {
     'kendall': lambda x, y: stats.kendalltau(x, y),
 }
 
-CONSTANT_WARNING = {'pearson': stats.PearsonRConstantInputWarning,
-                    'spearman': stats.SpearmanRConstantInputWarning}
+CONSTANT_WARNING = {'pearson': stats.ConstantInputWarning,
+                    'spearman': stats.ConstantInputWarning}
 
 
 def generate_correlation_map(x: np.ndarray, y: np.ndarray, method: str = 'pearson') -> np.ndarray:
@@ -194,16 +194,17 @@ def plot_two_way_sdc(sdc_df: pd.DataFrame, alpha: float = .05, **kwargs):
     f = (sdc_df
          .loc[lambda dd: dd.p_value < alpha]
          .assign(r_str=lambda dd: dd['r'].apply(lambda x: '$r > 0$' if x > 0 else '$r < 0$'))
-         .pipe(lambda dd: p9.ggplot(dd)
-                          + p9.aes('start_1', 'start_2', fill='r_str', alpha='abs(r)')
-                          + p9.geom_tile()
-                          + p9.scale_fill_manual(['#da2421', 'black'])
-                          + p9.scale_y_reverse()
-                          + p9.theme(**kwargs)
-                          + p9.guides(alpha=False)
-                          + p9.labs(x='$X_i$', y='$Y_j$', fill='$r$',
-                                    title=f'Two-Way SDC plot for $S = {fragment_size}$' + r' and $\alpha =$' +
-                                          f'{alpha}')
+         .pipe(lambda dd: 
+         p9.ggplot(dd)
+       + p9.aes('start_1', 'start_2', fill='r_str', alpha='abs(r)')
+       + p9.geom_tile()
+       + p9.scale_fill_manual(['#da2421', 'black'])
+       + p9.scale_y_reverse()
+       + p9.theme(**kwargs)
+       + p9.guides(alpha=False)
+       + p9.labs(x='$X_i$', y='$Y_j$', fill='$r$',
+                 title=f'Two-Way SDC plot for $S = {fragment_size}$' + r' and $\alpha =$' +
+                       f'{alpha}')
                )
          )
 
@@ -408,8 +409,8 @@ class SDCAnalysis:
 
         (self.sdc_df
          .loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
-         .pipe(lambda dd: sns.heatmap(dd.pivot('date_2', 'date_1', 'r'), cbar=False,
-                                      mask=dd.pivot('date_2', 'date_1', 'p_value') > alpha,
+         .pipe(lambda dd: sns.heatmap(dd.pivot(index='date_2', columns='date_1', values='r'), cbar=False,
+                                      mask=dd.pivot(index='date_2', columns='date_1', values='p_value') > alpha,
                                       cmap=sns.diverging_palette(10, 220, sep=80, n=20), ax=hm))
          )
         # Add identity line to ease shift visualization
