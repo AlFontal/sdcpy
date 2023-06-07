@@ -216,6 +216,13 @@ class SDCAnalysis:
                  sdc_df: Optional[pd.DataFrame] = None, min_lag: int = -np.inf, max_lag: int = np.inf):
         self.way = 'one-way' if ts2 is None else 'two-way'  # One-way SDC inferred if no ts2 is provided
         ts2 = ts1.copy() if self.way == 'one-way' else ts2
+        # TODO: As mentioned in (#4), we should make 
+        if not isinstance(ts1, pd.Series):
+            ts1 = pd.Series(ts1, 
+            index=pd.date_range(start='2000-01-01', periods=len(ts1), freq='D'))
+        if not isinstance(ts2, pd.Series):
+            ts2 = pd.Series(ts2, 
+            index=pd.date_range(start='2000-01-01', periods=len(ts2), freq='D'))
         min_date = max(ts1.index.min(), ts2.index.min())
         max_date = min(ts1.index.max(), ts2.index.max())
         self.ts1 = ts1[min_date:max_date]
@@ -466,7 +473,6 @@ class SDCAnalysis:
             (self.sdc_df
              .loc[lambda dd: dd.p_value < alpha]
              .loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
-             #.loc[lambda dd: dd['r'] < 0]
              .groupby('date_1')
              .apply(lambda dd: dd.loc[dd['r'].abs() == dd['r'].abs().max()].loc[lambda d: d['lag'] == d['lag'].min()])
              .reset_index(drop=True)
