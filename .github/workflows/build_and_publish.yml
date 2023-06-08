@@ -1,20 +1,18 @@
-on: [ push ]
-  # release:
-  #   types: [ published ]
+on:
+  release:
+    types: [ published ]
   
-name: Build and publish to PyPI
+name: Build and publish to PyPi
 jobs:
   publish-service-client-package:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@master
-        with: 
-          ref: feat-test/abstract
 
       - name: Build and publish to pypi
         uses: JRubics/poetry-publish@v1.17
         with:
-          pypi_token: ${{ secrets.TEST_PYPI_TOKEN }}
+          pypi_token: ${{ secrets.PYPI_TOKEN }}
           repository_name: "sdcpy"
-          repository_url: "https://test.pypi.org/legacy/"
+          repository_url: "https://upload.pypi.org/legacy/"
