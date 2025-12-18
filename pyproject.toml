@@ -1,6 +1,6 @@
 [project]
 name = "sdcpy"
-version = "0.3.1"
+version = "0.4.0"
 description = "Scale Dependent Correlation in Python"
 readme = "README.md"
 license = "MIT"
@@ -87,7 +87,7 @@ ignore = [
 known-first-party = ["sdcpy"]
 
 [tool.bumpversion]
-current_version = "0.3.1"
+current_version = "0.4.0"
 commit = true
 tag = true
 
