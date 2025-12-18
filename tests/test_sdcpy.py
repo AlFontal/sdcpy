@@ -1,18 +1,19 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 """Tests for `sdcpy` package."""
 
-import pytest
-import numpy as np
 import itertools
+
+import numpy as np
+import pytest
+
 from sdcpy.scale_dependent_correlation import SDCAnalysis
 
 ts1 = np.random.rand(100)
 ts2 = np.random.rand(100)
 fragment_sizes = [10, 50, 70]
 methods = ["pearson", "spearman"]
-params = list(itertools.product(fragment_sizes, methods)) 
+params = list(itertools.product(fragment_sizes, methods))
 
 @pytest.mark.parametrize('fragment_size,method', params)
 def test_sdc_analysis(fragment_size, method):
