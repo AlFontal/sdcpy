@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sdcpy"
-version = "0.3.0"
+version = "0.3.1"
 description = "Scale Dependent Correlation in Python"
 authors = ["Alejandro Fontal <alejandrofontal92@gmail.com>"]
 license = "MIT"

@@ -141,7 +141,7 @@ def compute_sdc(ts1: np.ndarray, ts2: np.ndarray, fragment_size: int, n_permutat
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     warnings.warn("Constant Fragment", CONSTANT_WARNING[method])
-                    r, p_value = method_fun(fragment_1, fragment_2)
+                    statistic, p_value = method_fun(fragment_1, fragment_2)
                 if permutations:
                     # Randomize both fragments and compute their correlations.
                     if method.lower() in ['pearson', 'spearman']:
@@ -154,13 +154,13 @@ def compute_sdc(ts1: np.ndarray, ts2: np.ndarray, fragment_size: int, n_permutat
                                            for _ in range(n_permutations)]
                     # Get the p-value by comparing the original value to the distribution of randomized values
                     if two_tailed:
-                        p_value = 1 - stats.percentileofscore(np.abs(permuted_scores), np.abs(r)) / 100
+                        p_value = 1 - stats.percentileofscore(np.abs(permuted_scores), np.abs(statistic)) / 100
                     else:
-                        p_value = 1 - stats.percentileofscore(permuted_scores, r) / 100
+                        p_value = 1 - stats.percentileofscore(permuted_scores, statistic) / 100
 
-                sdc_array[i] = [start_1, stop_1, start_2, stop_2, lag, r, p_value]
+                sdc_array[i] = [start_1, stop_1, start_2, stop_2, lag, statistic, p_value]
                 i += 1
-            progress_bar.update(1)
+                progress_bar.update(1)
 
     progress_bar.close()
     sdc_df = pd.DataFrame(sdc_array[:i], columns=['start_1', 'stop_1', 'start_2', 'stop_2', 'lag', 'r', 'p_value'])
