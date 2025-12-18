@@ -45,32 +45,37 @@ Ready to contribute? Here's how to set up `sdcpy` for local development.
 1. Fork the `sdcpy` repo on GitHub.
 2. Clone your fork locally:
    ```bash
-   $ git clone git@github.com:your_name_here/sdcpy.git
+   git clone git@github.com:your_name_here/sdcpy.git
    ```
-3. Install your local copy with Poetry:
+3. Install uv if you don't have it:
    ```bash
-   $ cd sdcpy/
-   $ poetry install
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-4. Create a branch for local development:
+4. Install your local copy with uv:
    ```bash
-   $ git checkout -b name-of-your-bugfix-or-feature
+   cd sdcpy/
+   uv sync --all-groups
+   ```
+5. Create a branch for local development:
+   ```bash
+   git checkout -b name-of-your-bugfix-or-feature
    ```
    Now you can make your changes locally.
 
-5. When you're done making changes, check that your changes pass tests:
+6. When you're done making changes, check that your changes pass tests:
    ```bash
-   $ poetry run pytest
+   uv run ruff check .
+   uv run pytest
    ```
 
-6. Commit your changes and push your branch to GitHub:
+7. Commit your changes and push your branch to GitHub:
    ```bash
-   $ git add .
-   $ git commit -m "Your detailed description of your changes."
-   $ git push origin name-of-your-bugfix-or-feature
+   git add .
+   git commit -m "Your detailed description of your changes."
+   git push origin name-of-your-bugfix-or-feature
    ```
 
-7. Submit a pull request through the GitHub website.
+8. Submit a pull request through the GitHub website.
 
 ## Pull Request Guidelines
 
@@ -84,7 +89,7 @@ Before you submit a pull request, check that it meets these guidelines:
 
 To run a subset of tests:
 ```bash
-$ poetry run pytest tests/test_sdcpy.py
+uv run pytest tests/test_sdcpy.py
 ```
 
 ## Deploying
@@ -93,8 +98,8 @@ A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed.
 Then run:
 ```bash
-$ bump-my-version bump patch # possible: major / minor / patch
-$ git push
-$ git push --tags
+bump-my-version bump patch # possible: major / minor / patch
+git push
+git push --tags
 ```
-Poetry will then build and publish to PyPI via GitHub Actions if tests pass.
+GitHub Actions will then build and publish to PyPI via Trusted Publishing.
