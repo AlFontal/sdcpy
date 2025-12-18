@@ -373,9 +373,10 @@ class SDCAnalysis:
         threshold: float = 0.0,
         ts: int = 1,
     ):
-        min_bin = int(np.floor(self.__dict__[f"ts{ts}"].min())) if min_bin is None else min_bin
-        max_bin = int(np.ceil(self.__dict__[f"ts{ts}"].max())) if max_bin is None else max_bin
-        name = self.__dict__[f"ts{ts}"].name
+        ts_series = self.ts1 if ts == 1 else self.ts2
+        min_bin = int(np.floor(ts_series.min())) if min_bin is None else min_bin
+        max_bin = int(np.ceil(ts_series.max())) if max_bin is None else max_bin
+        name = ts_series.name
         df = (
             self.sdc_df.dropna()
             .assign(
@@ -387,11 +388,7 @@ class SDCAnalysis:
             .rename(columns={"date_range": "date"})
             .reset_index()
             .rename(columns={"index": "comparison_id"})
-            .merge(
-                self.__dict__[f"ts{ts}"]
-                .reset_index()
-                .rename(columns={f"date_{ts}": "date", name: "value"})
-            )
+            .merge(ts_series.reset_index().rename(columns={f"date_{ts}": "date", name: "value"}))
             .assign(
                 cat_value=lambda dd: pd.cut(
                     dd.value, bins=list(range(min_bin, max_bin + bin_size, bin_size)), precision=0
