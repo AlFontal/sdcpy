@@ -90,7 +90,7 @@ $ poetry run pytest tests/test_sdcpy.py
 ## Deploying
 
 A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in CHANGELOG.md).
+Make sure all your changes are committed.
 Then run:
 ```bash
 $ bumpversion patch # possible: major / minor / patch
