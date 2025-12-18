@@ -54,6 +54,7 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "B028",   # stacklevel in warnings (intentional suppression in internal code)
 ]
 
 [tool.ruff.lint.isort]
