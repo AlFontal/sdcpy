@@ -1,18 +1,29 @@
+name: Build and publish to PyPI
+
 on:
   release:
-    types: [ published ]
-  
-name: Build and publish to PyPi
+    types: [published]
+
 jobs:
-  publish-service-client-package:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for Trusted Publishing
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
 
-      - name: Build and publish to pypi
-        uses: JRubics/poetry-publish@v1.17
+      - name: Install poetry
+        run: pipx install poetry
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          pypi_token: ${{ secrets.PYPI_TOKEN }}
-          repository_name: "sdcpy"
-          repository_url: "https://upload.pypi.org/legacy/"
+          python-version: '3.12'
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
