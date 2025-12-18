@@ -3,8 +3,7 @@
 ![](https://img.shields.io/pypi/pyversions/sdcpy.svg)
 ![](https://raster.shields.io/badge/license-MIT-green.png)
 ![](https://github.com/AlFontal/sdcpy/actions/workflows/run_tests.yml/badge.svg)
-![](https://zenodo.org/badge/329668116.svg)
-![](https://github.com/github/docs/actions/workflows/tests.yml/badge.svg)
+[![DOI](https://zenodo.org/badge/329668116.svg)](https://zenodo.org/badge/latestdoi/329668116)
 
 <img src="https://raw.githubusercontent.com/AlFontal/sdcpy-app/master/static/sdcpy_logo_black.png" width="200" height="250" />
 
@@ -14,20 +13,38 @@ Scale Dependent Correlation (SDC) analysis<sup>1, 2, 3</sup> in Python.
 + Free software: MIT license
 + Documentation: https://sdcpy.readthedocs.io.
 
-## Features
-
-+ [Scale Dependent Correlation](https://github.com/AlFontal/sdcpy/blob/master/sdcpy/scale_dependent_correlation.py)
-
-+ TO DO
-
 ## Installation
 
-You can install `sdcpy` via `pip` from [PyPI](https://pypi.org/project/sdcpy/):
+Install from [PyPI](https://pypi.org/project/sdcpy/):
 
 ```bash
 pip install sdcpy
 ```
 
+Or using [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv pip install sdcpy
+```
+
+## Development
+
+To set up a local development environment:
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and install
+git clone https://github.com/AlFontal/sdcpy.git
+cd sdcpy
+uv sync --all-groups
+
+# Run tests
+uv run pytest
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## References
 
