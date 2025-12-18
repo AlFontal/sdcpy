@@ -1,42 +1,68 @@
-[tool.poetry]
+[project]
 name = "sdcpy"
 version = "0.3.1"
 description = "Scale Dependent Correlation in Python"
-authors = ["Alejandro Fontal <alejandrofontal92@gmail.com>"]
-license = "MIT"
 readme = "README.md"
-packages = [{include = "sdcpy"}]
-exclude = [
-  "**/*.rst",
-  "**/__pycache__/**",
-  "**/*.py[cod]",
-  "docs/_build/**",
-  "**/.DS_Store"
+license = "MIT"
+requires-python = ">=3.9,<3.13"
+authors = [
+    {name = "Alejandro Fontal", email = "alejandrofontal92@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "matplotlib>=3.7.1",
+    "numpy>=1.24.3",
+    "pandas>=2.0.2",
+    "plotnine>=0.12.1",
+    "seaborn>=0.12.2",
+    "scipy>=1.10.1",
+    "tqdm>=4.65.0",
 ]
 
-[tool.poetry.dependencies]
-python = ">=3.9,<3.13"
-matplotlib = "^3.7.1"
-numpy = "^1.24.3"
-pandas = "^2.0.2"
-plotnine = "^0.12.1"
-seaborn = "^0.12.2"
-scipy = "^1.10.1"
-tqdm = "^4.65.0"
+[project.urls]
+Homepage = "https://github.com/AlFontal/sdcpy"
+Documentation = "https://sdcpy.readthedocs.io"
+Repository = "https://github.com/AlFontal/sdcpy"
 
-[tool.poetry.group.dev.dependencies]
-bump-my-version = "^0.28.0"
-watchdog = "^3.0.0"
-tox = "^4.6.0"
-coverage = "^7.2.7"
-pytest = "^7.3.1"
-ruff = "^0.8.0"
-pre-commit = "^4.0.0"
+[dependency-groups]
+dev = [
+    "bump-my-version>=0.28.0",
+    "watchdog>=3.0.0",
+    "tox>=4.6.0",
+    "coverage>=7.2.7",
+    "pytest>=7.3.1",
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
+]
+docs = [
+    "Sphinx>=7.0.1",
+    "alabaster>=0.7.13",
+    "myst-parser>=2.0.0",
+]
 
-[tool.poetry.group.docs.dependencies]
-Sphinx = "^7.0.1"
-alabaster = "^0.7.13"
-myst-parser = "^2.0.0"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "**/*.rst",
+    "**/__pycache__/**",
+    "**/*.py[cod]",
+    "docs/_build/**",
+    "**/.DS_Store",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sdcpy"]
 
 [tool.ruff]
 target-version = "py39"
@@ -59,7 +85,3 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["sdcpy"]
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"

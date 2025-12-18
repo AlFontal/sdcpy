@@ -133,7 +133,7 @@ def compute_sdc(
     n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
     n_root = int(np.sqrt(n_permutations).round())
     sdc_array = np.empty(shape=(n_iterations, 7))
-    sdc_array[:] = np.NaN
+    sdc_array[:] = np.nan
     i = 0
     progress_bar = tqdm(total=n_iterations, desc="Computing SDC", leave=False)
     # We iterate over all possible fragments of size `fragment_size` in both time-series
