@@ -3,3 +3,5 @@
 */__pycache__/*
 sdcpy.egg-info/*
 build/*
+*/*/AGENTS.md
+**/.DS_Store
