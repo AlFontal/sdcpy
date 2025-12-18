@@ -1,5 +1,9 @@
 import warnings
-from typing import Callable, Optional, Union
+from typing import TYPE_CHECKING, Callable, Optional, Union
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure as MplFigure
+    from plotnine.ggplot import ggplot
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -188,7 +192,7 @@ def compute_sdc(
     return sdc_df
 
 
-def plot_two_way_sdc(sdc_df: pd.DataFrame, alpha: float = 0.05, **kwargs):
+def plot_two_way_sdc(sdc_df: pd.DataFrame, alpha: float = 0.05, **kwargs) -> "ggplot":
     """
     Plots the results of a SDC analysis for a fixed window size in a 2D figure.
 
@@ -294,7 +298,7 @@ class SDCAnalysis:
             )
         self.method = method
 
-    def two_way_plot(self, alpha: float = 0.05, **kwargs):
+    def two_way_plot(self, alpha: float = 0.05, **kwargs) -> "ggplot":
         return plot_two_way_sdc(self.sdc_df, alpha, **kwargs)
 
     def to_excel(self, filename: str):
@@ -475,7 +479,7 @@ class SDCAnalysis:
 
         return fig
 
-    def plot_consecutive(self, alpha: float = 0.05, **kwargs):
+    def plot_consecutive(self, alpha: float = 0.05, **kwargs) -> "ggplot":
         f = (
             self.sdc_df.loc[lambda dd: dd.p_value < alpha]
             # Here I make groups of consecutive significant values and report the longest for each lag.
@@ -720,7 +724,7 @@ class SDCAnalysis:
 
         return fig
 
-    def dominant_lags_plot(self, alpha: float = 0.05, ylabel: str = "", **kwargs):
+    def dominant_lags_plot(self, alpha: float = 0.05, ylabel: str = "", **kwargs) -> "MplFigure":
         fig, ax = plt.subplots(**kwargs)
         df = (
             self.sdc_df.loc[lambda dd: dd.p_value < alpha]
@@ -774,5 +778,5 @@ class SDCAnalysis:
 
         return fig
 
-    def single_shift_plot(self, shift: int):
-        pass
+    def single_shift_plot(self, shift: int) -> "MplFigure":
+        raise NotImplementedError("single_shift_plot is not yet implemented")
