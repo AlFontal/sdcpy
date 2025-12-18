@@ -6,6 +6,13 @@ authors = ["Alejandro Fontal <alejandrofontal92@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "sdcpy"}]
+exclude = [
+  "**/*.rst",
+  "**/__pycache__/**",
+  "**/*.py[cod]",
+  "docs/_build/**",
+  "**/.DS_Store"
+]
 
 [tool.poetry.dependencies]
 python = ">=3.8,<3.12"
@@ -16,19 +23,20 @@ plotnine = "^0.12.1"
 seaborn = "^0.12.2"
 scipy = "^1.10.1"
 tqdm = "^4.65.0"
-alabaster = "^0.7.13"
 
 [tool.poetry.group.dev.dependencies]
-alabaster = "^0.7.13"
 bumpversion = "^0.6.0"
 wheel = "^0.40.0"
 watchdog = "^3.0.0"
 tox = "^4.6.0"
 coverage = "^7.2.7"
 pytest = "^7.3.1"
-pytest-runner = "^6.0.0"
 twine = "^4.0.2"
+
+[tool.poetry.group.docs.dependencies]
 Sphinx = "^7.0.1"
+alabaster = "^0.7.13"
+myst-parser = "^2.0.0"
 
 [build-system]
 requires = ["poetry-core"]
