@@ -93,7 +93,7 @@ A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed.
 Then run:
 ```bash
-$ bumpversion patch # possible: major / minor / patch
+$ bump-my-version bump patch # possible: major / minor / patch
 $ git push
 $ git push --tags
 ```
