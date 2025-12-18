@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # sdcpy documentation build configuration file, created by
 # sphinx-quickstart on Fri Jun  9 13:47:02 2017.
@@ -51,7 +50,7 @@ master_doc = "index"
 
 # General information about the project.
 project = "sdcpy"
-copyright = "2020, Alejandro Fontal"
+copyright = "2020-2024, Alejandro Fontal"
 author = "Alejandro Fontal"
 
 # The version info for the project you're documenting, acts as replacement
@@ -68,7 +67,7 @@ release = sdcpy.__version__
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = "en"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -151,7 +150,7 @@ texinfo_documents = [
         "sdcpy Documentation",
         author,
         "sdcpy",
-        "One line description of project.",
+        "Scale Dependent Correlation analysis in Python.",
         "Miscellaneous",
     ),
 ]
