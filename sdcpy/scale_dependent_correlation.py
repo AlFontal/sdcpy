@@ -12,8 +12,6 @@ from scipy import stats
 from scipy.stats.mstats import rankdata
 from tqdm.auto import tqdm
 
-plt.style.use("seaborn-v0_8-white")
-
 RECOGNIZED_METHODS = {
     "pearson": lambda x, y: stats.pearsonr(x, y),
     "spearman": lambda x, y: stats.spearmanr(x, y),
