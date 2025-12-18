@@ -395,7 +395,7 @@ class SDCAnalysis:
                 )
             )
             .groupby(["comparison_id"])
-            .apply(lambda dd: dd.cat_value.value_counts(True))
+            .apply(lambda dd: dd.cat_value.value_counts(True), include_groups=False)
             .loc[lambda x: x > threshold]
             .reset_index()
             .drop(columns="cat_value")
@@ -417,7 +417,10 @@ class SDCAnalysis:
                 )
             )
             .groupby("cat_value")
-            .apply(lambda dd: dd["direction"].value_counts().rename("counts").reset_index())
+            .apply(
+                lambda dd: dd["direction"].value_counts().rename("counts").reset_index(),
+                include_groups=False,
+            )
             .reset_index()
             .drop(columns="level_1")
             .rename(columns={"index": "direction"})
@@ -482,7 +485,8 @@ class SDCAnalysis:
                 .assign(group=lambda dd: (dd.start_1 != dd.start_1.shift(1) + 1).cumsum())
                 .groupby(["group"])
                 .size()
-                .max()
+                .max(),
+                include_groups=False,
             )
             .rename("Max Consecutive steps")
             .reset_index()
@@ -646,9 +650,10 @@ class SDCAnalysis:
                 .apply(
                     lambda dd: dd.loc[dd["r"].abs() == dd["r"].abs().max()].loc[
                         lambda d: d["lag"] == d["lag"].min()
-                    ]
+                    ],
+                    include_groups=False,
                 )
-                .reset_index(drop=True)
+                .reset_index(level=0)
                 .groupby("date_1")
                 .agg(
                     r_max=("r", lambda x: x.where(x > 0).max()),
@@ -724,11 +729,14 @@ class SDCAnalysis:
                 lambda dd: dd.loc[
                     lambda ddd: ((ddd.r == ddd.r.max()) & (ddd.r > 0))
                     | ((ddd.r == ddd.r.min()) & (ddd.r < 0))
-                ]
+                ],
+                include_groups=False,
             )
             .reset_index(drop=True)
             .groupby(["date_1"])
-            .apply(lambda dd: dd.loc[dd["lag"].abs() == dd["lag"].abs().min()])
+            .apply(
+                lambda dd: dd.loc[dd["lag"].abs() == dd["lag"].abs().min()], include_groups=False
+            )
             .assign(
                 date_1=lambda dd: dd.date_1 + pd.to_timedelta(self.fragment_size // 2, unit="days")
             )
