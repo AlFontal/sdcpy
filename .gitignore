@@ -1,7 +1,8 @@
 .eggs/*
 .tox/*
 */__pycache__/*
-sdcpy.egg-info/*
+*.egg-info/
 build/*
+dist/*
 */*/AGENTS.md
 **/.DS_Store
