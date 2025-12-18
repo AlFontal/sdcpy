@@ -146,7 +146,6 @@ def compute_sdc(
                 # Compute the correlation/distance across both fragments
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    warnings.warn("Constant Fragment", CONSTANT_WARNING[method])
                     statistic, p_value = method_fun(fragment_1, fragment_2)
                 if permutations:
                     # Randomize both fragments and compute their correlations.
