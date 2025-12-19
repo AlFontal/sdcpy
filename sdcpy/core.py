@@ -75,6 +75,15 @@ def shuffle_along_axis(a: np.ndarray, axis: int) -> np.ndarray:
     return np.take_along_axis(a, idx, axis=axis)
 
 
+def _build_fragment_matrix(ts: np.ndarray, fragment_size: int) -> np.ndarray:
+    """Build a matrix where each row is a sliding window fragment of the time series."""
+    n_fragments = len(ts) - fragment_size
+    # Use stride tricks for efficient view-based slicing
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    return sliding_window_view(ts, fragment_size)[:n_fragments]
+
+
 def compute_sdc(
     ts1: np.ndarray,
     ts2: np.ndarray,
@@ -122,16 +131,160 @@ def compute_sdc(
         Data frame with a row for each pair wise comparison containing information about the coordinates of each
         fragment used, the similarity obtained and the p-value from the randomised test.
     """
+    # Convert to numpy arrays if needed
+    ts1_arr = np.asarray(ts1)
+    ts2_arr = np.asarray(ts2)
 
-    method_fun = RECOGNIZED_METHODS[method] if method in RECOGNIZED_METHODS else method
-    # TODO: Proper calculation of number of iterations considering the range of lags selected
+    # Use vectorized path for built-in methods
+    if method in RECOGNIZED_METHODS:
+        return _compute_sdc_vectorized(
+            ts1_arr,
+            ts2_arr,
+            fragment_size,
+            n_permutations,
+            method,
+            two_tailed,
+            permutations,
+            min_lag,
+            max_lag,
+        )
+    else:
+        # Fall back to original loop-based implementation for custom callables
+        return _compute_sdc_loop(
+            ts1_arr,
+            ts2_arr,
+            fragment_size,
+            n_permutations,
+            method,
+            two_tailed,
+            permutations,
+            min_lag,
+            max_lag,
+        )
+
+
+def _compute_sdc_vectorized(
+    ts1: np.ndarray,
+    ts2: np.ndarray,
+    fragment_size: int,
+    n_permutations: int,
+    method: str,
+    two_tailed: bool,
+    permutations: bool,
+    min_lag: int,
+    max_lag: int,
+) -> pd.DataFrame:
+    """Vectorized implementation for built-in correlation methods."""
+    n1 = len(ts1) - fragment_size
+    n2 = len(ts2) - fragment_size
+
+    # Build fragment matrices using sliding window
+    frags1 = _build_fragment_matrix(ts1, fragment_size)  # (n1, fragment_size)
+    frags2 = _build_fragment_matrix(ts2, fragment_size)  # (n2, fragment_size)
+
+    # Compute all correlations at once using vectorized correlation map
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        corr_matrix = generate_correlation_map(frags1, frags2, method=method)  # (n1, n2)
+
+    # Build lag matrix
+    start_1_grid, start_2_grid = np.meshgrid(np.arange(n1), np.arange(n2), indexing="ij")
+    lag_matrix = start_1_grid - start_2_grid
+
+    # Create mask for valid lags
+    valid_mask = (lag_matrix >= min_lag) & (lag_matrix <= max_lag)
+
+    # Extract valid entries
+    valid_indices = np.where(valid_mask)
+    n_valid = len(valid_indices[0])
+
+    start_1_vals = valid_indices[0]
+    start_2_vals = valid_indices[1]
+    stop_1_vals = start_1_vals + fragment_size
+    stop_2_vals = start_2_vals + fragment_size
+    lag_vals = lag_matrix[valid_mask]
+    r_vals = corr_matrix[valid_mask]
+
+    # Compute p-values
+    if permutations:
+        n_root = int(np.sqrt(n_permutations).round())
+        n_actual_perms = n_root * n_root
+        p_values = np.zeros(n_valid)
+
+        # Process in batches for memory efficiency
+        batch_size = 500
+        for batch_start in tqdm(
+            range(0, n_valid, batch_size), desc="Computing p-values", leave=False
+        ):
+            batch_end = min(batch_start + batch_size, n_valid)
+            batch_indices = range(batch_start, batch_end)
+
+            for idx in batch_indices:
+                i, j = start_1_vals[idx], start_2_vals[idx]
+                frag1 = frags1[i]
+                frag2 = frags2[j]
+                statistic = r_vals[idx]
+
+                # Generate permuted fragments
+                permuted_1 = shuffle_along_axis(np.tile(frag1, n_root).reshape(n_root, -1), axis=1)
+                permuted_2 = shuffle_along_axis(np.tile(frag2, n_root).reshape(n_root, -1), axis=1)
+                permuted_scores = generate_correlation_map(
+                    permuted_1, permuted_2, method=method
+                ).reshape(-1)
+
+                if two_tailed:
+                    p_values[idx] = (
+                        1
+                        - stats.percentileofscore(np.abs(permuted_scores), np.abs(statistic)) / 100
+                    )
+                else:
+                    p_values[idx] = 1 - stats.percentileofscore(permuted_scores, statistic) / 100
+    else:
+        # Use scipy's p-values
+        p_values = np.zeros(n_valid)
+        method_fun = RECOGNIZED_METHODS[method]
+        for idx in range(n_valid):
+            i, j = start_1_vals[idx], start_2_vals[idx]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                _, p_values[idx] = method_fun(frags1[i], frags2[j])
+
+    # Build result DataFrame
+    sdc_df = pd.DataFrame(
+        {
+            "start_1": start_1_vals.astype(float),
+            "stop_1": stop_1_vals.astype(float),
+            "start_2": start_2_vals.astype(float),
+            "stop_2": stop_2_vals.astype(float),
+            "lag": lag_vals.astype(float),
+            "r": r_vals,
+            "p_value": p_values,
+        }
+    )
+
+    return sdc_df
+
+
+def _compute_sdc_loop(
+    ts1: np.ndarray,
+    ts2: np.ndarray,
+    fragment_size: int,
+    n_permutations: int,
+    method: Callable,
+    two_tailed: bool,
+    permutations: bool,
+    min_lag: int,
+    max_lag: int,
+) -> pd.DataFrame:
+    """Original loop-based implementation for custom callable methods."""
+    method_fun = method
     n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
     n_root = int(np.sqrt(n_permutations).round())
     sdc_array = np.empty(shape=(n_iterations, 7))
     sdc_array[:] = np.nan
     i = 0
     progress_bar = tqdm(total=n_iterations, desc="Computing SDC", leave=False)
-    # We iterate over all possible fragments of size `fragment_size` in both time-series
+
     for start_1 in range(len(ts1) - fragment_size):
         stop_1 = start_1 + fragment_size
         for start_2 in range(len(ts2) - fragment_size):
@@ -140,30 +293,18 @@ def compute_sdc(
                 stop_2 = start_2 + fragment_size
                 fragment_1 = ts1[start_1:stop_1]
                 fragment_2 = ts2[start_2:stop_2]
-                # Compute the correlation/distance across both fragments
+
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     statistic, p_value = method_fun(fragment_1, fragment_2)
+
                 if permutations:
-                    # Randomize both fragments and compute their correlations.
-                    if method.lower() in ["pearson", "spearman"]:
-                        permuted_1 = shuffle_along_axis(
-                            np.tile(fragment_1, n_root).reshape(n_root, -1), axis=1
-                        )
-                        permuted_2 = shuffle_along_axis(
-                            np.tile(fragment_2, n_root).reshape(n_root, -1), axis=1
-                        )
-                        permuted_scores = generate_correlation_map(
-                            permuted_1, permuted_2, method=method
-                        ).reshape(-1)
-                    else:
-                        permuted_scores = [
-                            method_fun(
-                                np.random.permutation(fragment_1), np.random.permutation(fragment_2)
-                            )[0]
-                            for _ in range(n_permutations)
-                        ]
-                    # Get the p-value by comparing the original value to the distribution of randomized values
+                    permuted_scores = [
+                        method_fun(
+                            np.random.permutation(fragment_1), np.random.permutation(fragment_2)
+                        )[0]
+                        for _ in range(n_permutations)
+                    ]
                     if two_tailed:
                         p_value = (
                             1
