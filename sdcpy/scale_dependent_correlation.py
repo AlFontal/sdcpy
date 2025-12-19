@@ -1,9 +1,7 @@
+"""Scale Dependent Correlation analysis."""
+
 import warnings
 from typing import TYPE_CHECKING, Callable, Optional, Union
-
-if TYPE_CHECKING:
-    from matplotlib.figure import Figure as MplFigure
-    from plotnine.ggplot import ggplot
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -12,231 +10,21 @@ import pandas as pd
 import plotnine as p9
 import seaborn as sns
 from matplotlib import ticker
-from scipy import stats
-from scipy.stats.mstats import rankdata
-from tqdm.auto import tqdm
 
-RECOGNIZED_METHODS = {
-    "pearson": lambda x, y: stats.pearsonr(x, y),
-    "spearman": lambda x, y: stats.spearmanr(x, y),
-}
+from sdcpy.core import compute_sdc
+from sdcpy.io import load_from_excel, save_to_excel
+from sdcpy.plotting import plot_two_way_sdc
 
-CONSTANT_WARNING = {"pearson": stats.ConstantInputWarning, "spearman": stats.ConstantInputWarning}
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure as MplFigure
+    from plotnine.ggplot import ggplot
 
-
-def generate_correlation_map(x: np.ndarray, y: np.ndarray, method: str = "pearson") -> np.ndarray:
-    """
-    Correlate each row in matrix X against each row in matrix Y.
-
-    Parameters
-    ----------
-    x
-      Shape N X T.
-    y
-      Shape M X T.
-    method
-        Method use to compute the correlation. Must be one of 'pearson' or 'spearman'
-
-    Returns
-    -------
-    np.array
-      N X M array in which each element is a correlation coefficient.
-
-    """
-    if method.lower() not in ["spearman", "pearson"]:
-        raise NotImplementedError(
-            f'Method {method} not understood, must be one of "pearson", "spearman"'
-        )
-
-    if method.lower() == "spearman":
-        x = rankdata(x, axis=1)
-        y = rankdata(y, axis=1)
-
-    mu_x = x.mean(axis=1)
-    mu_y = y.mean(axis=1)
-    n = x.shape[1]
-    if n != y.shape[1]:
-        raise ValueError("x and y must have the same number of timepoints.")
-    s_x = x.std(axis=1, ddof=n - 1)
-    s_y = y.std(axis=1, ddof=n - 1)
-    cov = np.dot(x, y.T) - n * np.dot(mu_x[:, np.newaxis], mu_y[np.newaxis, :])
-    return cov / np.dot(s_x[:, np.newaxis], s_y[np.newaxis, :])
-
-
-def shuffle_along_axis(a: np.ndarray, axis: int) -> np.ndarray:
-    """
-    Shuffles array independently across selected axis
-
-    Parameters
-    ----------
-    a
-        Input array
-    axis
-        Axis across which to shuffle
-    Returns
-    -------
-    np.ndarray
-        Shuffled copy of original array
-    """
-    idx = np.random.rand(*a.shape).argsort(axis=axis)
-    return np.take_along_axis(a, idx, axis=axis)
-
-
-def compute_sdc(
-    ts1: np.ndarray,
-    ts2: np.ndarray,
-    fragment_size: int,
-    n_permutations: int = 99,
-    method: Union[str, Callable] = "pearson",
-    two_tailed: bool = True,
-    permutations: bool = True,
-    min_lag: int = -np.inf,
-    max_lag: int = np.inf,
-) -> pd.DataFrame:
-    """
-    Computes scale dependent correlation (https://doi.org/10.1007/s00382-005-0106-4) matrix among two time series
-
-    Parameters
-    ----------
-    ts1
-        First time series. Must be array-like.
-    ts2
-        Second time series. Must be array-like.
-    fragment_size
-        Size of the fragments of the original time-series that will be used in their one-to-one comparison.
-    n_permutations
-        Number of permutations used to obtain the p-value of the non-parametric randomization test.
-    method
-        Method that will be used to perform the pairwise correlation/similarity/distance comparisons. Methods already
-        understood are `pearson`, `spearman` and `kendall` but any custom callable taking two array-like inputs and
-        returning a single float can be used. Note that this will be called n_permutations + 1 times for every single
-        pairwise comparison, so an expensive call can significantly increase the total computation time. Pearson method
-        will be orders of magnitude faster than the others since it has been implemented via vectorized functions.
-    two_tailed
-        Whether to use a two tailed randomised test or not. Default recognized methods should use the default two tailed
-        value, but other distance metrics might not.
-    permutations
-        Whether to generate permutations of the fragments and generate their estimated-pvalues. If False, all p-values
-        returned will be those from the statistical test passed in method.
-    min_lag
-        Lower limit of the lags between ts1 and ts2 that will be computed.
-    max_lag
-        Upper limit of the lags between ts1 and ts2 that will be computed.
-
-    Returns
-    -------
-    pd.DataFrame
-        Data frame with a row for each pair wise comparison containing information about the coordinates of each
-        fragment used, the similarity obtained and the p-value from the randomised test.
-    """
-
-    method_fun = RECOGNIZED_METHODS[method] if method in RECOGNIZED_METHODS else method
-    # TODO: Proper calculation of number of iterations considering the range of lags selected
-    n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
-    n_root = int(np.sqrt(n_permutations).round())
-    sdc_array = np.empty(shape=(n_iterations, 7))
-    sdc_array[:] = np.nan
-    i = 0
-    progress_bar = tqdm(total=n_iterations, desc="Computing SDC", leave=False)
-    # We iterate over all possible fragments of size `fragment_size` in both time-series
-    for start_1 in range(len(ts1) - fragment_size):
-        stop_1 = start_1 + fragment_size
-        for start_2 in range(len(ts2) - fragment_size):
-            lag = start_1 - start_2
-            if min_lag <= lag <= max_lag:
-                stop_2 = start_2 + fragment_size
-                fragment_1 = ts1[start_1:stop_1]
-                fragment_2 = ts2[start_2:stop_2]
-                # Compute the correlation/distance across both fragments
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    statistic, p_value = method_fun(fragment_1, fragment_2)
-                if permutations:
-                    # Randomize both fragments and compute their correlations.
-                    if method.lower() in ["pearson", "spearman"]:
-                        permuted_1 = shuffle_along_axis(
-                            np.tile(fragment_1, n_root).reshape(n_root, -1), axis=1
-                        )
-                        permuted_2 = shuffle_along_axis(
-                            np.tile(fragment_2, n_root).reshape(n_root, -1), axis=1
-                        )
-                        permuted_scores = generate_correlation_map(
-                            permuted_1, permuted_2, method=method
-                        ).reshape(-1)
-                    else:
-                        permuted_scores = [
-                            method_fun(
-                                np.random.permutation(fragment_1), np.random.permutation(fragment_2)
-                            )[0]
-                            for _ in range(n_permutations)
-                        ]
-                    # Get the p-value by comparing the original value to the distribution of randomized values
-                    if two_tailed:
-                        p_value = (
-                            1
-                            - stats.percentileofscore(np.abs(permuted_scores), np.abs(statistic))
-                            / 100
-                        )
-                    else:
-                        p_value = 1 - stats.percentileofscore(permuted_scores, statistic) / 100
-
-                sdc_array[i] = [start_1, stop_1, start_2, stop_2, lag, statistic, p_value]
-                i += 1
-                progress_bar.update(1)
-
-    progress_bar.close()
-    sdc_df = pd.DataFrame(
-        sdc_array[:i], columns=["start_1", "stop_1", "start_2", "stop_2", "lag", "r", "p_value"]
-    )
-
-    return sdc_df
-
-
-def plot_two_way_sdc(sdc_df: pd.DataFrame, alpha: float = 0.05, **kwargs) -> "ggplot":
-    """
-    Plots the results of a SDC analysis for a fixed window size in a 2D figure.
-
-    In a similar fashion to a recurrence plot, x and y axes represent the start index of the x and y sequences. Only
-    results with a p_value < alpha are shown, while controlling the alpha as a function of the intensity of the score
-    and the color as a function of the sign of the established relationship.
-
-    Parameters
-    ----------
-    sdc_df
-        Data frame as outputted by `compute_sdc` which will be used to plot the results.
-    alpha
-        Significance threshold. Only values with a score < alpha will be plotted
-    kwargs
-        Keyword arguments to pass to `plotnine.theme` to customize the plot.
-    Returns
-    -------
-    p9.ggplot.ggplot
-        Plot
-    """
-    fragment_size = int(sdc_df.iloc[0]["stop_1"] - sdc_df.iloc[0]["start_1"])
-    f = (
-        sdc_df.loc[lambda dd: dd.p_value < alpha]
-        .assign(r_str=lambda dd: dd["r"].apply(lambda x: "$r > 0$" if x > 0 else "$r < 0$"))
-        .pipe(
-            lambda dd: p9.ggplot(dd)
-            + p9.aes("start_1", "start_2", fill="r_str", alpha="abs(r)")
-            + p9.geom_tile()
-            + p9.scale_fill_manual(["#da2421", "black"])
-            + p9.scale_y_reverse()
-            + p9.theme(**kwargs)
-            + p9.guides(alpha=False)
-            + p9.labs(
-                x="$X_i$",
-                y="$Y_j$",
-                fill="$r$",
-                title=f"Two-Way SDC plot for $S = {fragment_size}$"
-                + r" and $\alpha =$"
-                + f"{alpha}",
-            )
-        )
-    )
-
-    return f
+# Re-export core functions for backward compatibility
+__all__ = [
+    "SDCAnalysis",
+    "compute_sdc",
+    "plot_two_way_sdc",
+]
 
 
 class SDCAnalysis:
@@ -302,70 +90,26 @@ class SDCAnalysis:
         return plot_two_way_sdc(self.sdc_df, alpha, **kwargs)
 
     def to_excel(self, filename: str):
-        with pd.ExcelWriter(filename) as writer:
-            (
-                self.sdc_df.dropna()
-                .pivot(index="start_1", columns="start_2", values="r")
-                .to_excel(writer, sheet_name="rs")
-            )
-            (
-                self.sdc_df.dropna()
-                .pivot(index="start_1", columns="start_2", values="p_value")
-                .to_excel(writer, sheet_name="p_values")
-            )
-
-            pd.concat(
-                [
-                    self.ts1.rename("ts1")
-                    .reset_index()
-                    .reset_index()
-                    .rename(columns={"index": "start_1"}),
-                    self.ts2.rename("ts2")
-                    .reset_index()
-                    .reset_index()
-                    .rename(columns={"index": "start_2"}),
-                ],
-                axis=1,
-            ).to_excel(writer, sheet_name="time_series", index=False)
-
-            pd.DataFrame(
-                {
-                    "fragment_size": self.fragment_size,
-                    "n_permutations": self.n_permutations,
-                    "method": self.method,
-                },
-                index=[1],
-            ).to_excel(writer, sheet_name="config", index=False)
+        save_to_excel(
+            self.sdc_df,
+            self.ts1,
+            self.ts2,
+            self.fragment_size,
+            self.n_permutations,
+            self.method,
+            filename,
+        )
 
     @classmethod
     def from_excel(cls, filename: str):
-        fragment_size, n_permutations, method = pd.read_excel(filename, "config").loc[0]
-        ts1 = pd.read_excel(filename, "time_series").set_index("date_1")[["start_1", "ts1"]]
-        ts2 = pd.read_excel(filename, "time_series").set_index("date_2")[["start_2", "ts2"]]
-        sdc_df = (
-            pd.merge(
-                pd.read_excel(filename, "rs").melt("start_1", value_name="r", var_name="start_2"),
-                pd.read_excel(filename, "p_values").melt(
-                    "start_1", value_name="p_value", var_name="start_2"
-                ),
-                on=["start_1", "start_2"],
-            )
-            .assign(
-                stop_1=lambda dd: dd.start_1 + fragment_size,
-                stop_2=lambda dd: dd.start_2 + fragment_size,
-                lag=lambda dd: dd.start_1 - dd.start_2,
-            )
-            .merge(ts1.reset_index()[["date_1", "start_1"]])
-            .merge(ts2.reset_index()[["date_2", "start_2"]])
-        )
-
+        data = load_from_excel(filename)
         return cls(
-            ts1=ts1.ts1,
-            ts2=ts2.ts2,
-            fragment_size=fragment_size,
-            n_permutations=n_permutations,
-            method=method,
-            sdc_df=sdc_df,
+            ts1=data["ts1"],
+            ts2=data["ts2"],
+            fragment_size=data["fragment_size"],
+            n_permutations=data["n_permutations"],
+            method=data["method"],
+            sdc_df=data["sdc_df"],
         )
 
     def get_ranges_df(
@@ -521,7 +265,7 @@ class SDCAnalysis:
         hspace: float = 1.0,
         show_colorbar: bool = True,
         **kwargs,
-    ):
+    ) -> "MplFigure":
         # Setting up parameters
         title = f"SDC plot (s = {self.fragment_size})" if title is None else title
         align = align.lower()
@@ -773,7 +517,7 @@ class SDCAnalysis:
         ax2.grid(which="major")
         ax2.set_xlabel("")
         ax.set_xlabel("")
-        ax.set_ylabel("AH [g/m³]")
+        ax.set_ylabel(ylabel if ylabel else "Value")
         ax2.set_ylabel("Max/Min r")
 
         return fig
