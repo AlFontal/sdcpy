@@ -21,11 +21,75 @@ Install from [PyPI](https://pypi.org/project/sdcpy/):
 pip install sdcpy
 ```
 
-Or using [uv](https://docs.astral.sh/uv/):
+Or using [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
 uv pip install sdcpy
 ```
+
+## Quick Start
+
+```python
+import numpy as np
+import pandas as pd
+from sdcpy import SDCAnalysis
+
+# Create sample time series
+np.random.seed(42)
+dates = pd.date_range("2020-01-01", periods=200, freq="D")
+ts1 = pd.Series(np.cumsum(np.random.randn(200)), index=dates, name="Temperature")
+ts1.index.name = "date_1"
+
+# Create a lagged, correlated series
+ts2 = ts1.shift(7).fillna(0) + np.random.randn(200) * 0.5
+ts2.name = "Infections"
+ts2.index.name = "date_2"
+
+# Run SDC analysis
+sdc = SDCAnalysis(
+    ts1, ts2,
+    fragment_size=14,      # 14-day windows
+    n_permutations=99,     # For p-value calculation
+    method="pearson"       # Or "spearman"
+)
+
+# Access results
+print(sdc.sdc_df.head())
+```
+
+### Visualizing Results
+
+#### Combination Plot (combi_plot)
+
+The signature visualization showing the correlation heatmap with time series:
+
+```python
+fig = sdc.combi_plot(
+    figsize=(12, 10),
+    alpha=0.05,              # Significance threshold
+    xlabel="Temperature",
+    ylabel="Infections",
+    show_colorbar=True,
+    show_ts2=True,           # Toggle left time series
+)
+fig.savefig("sdc_combi_plot.png", dpi=150, bbox_inches="tight")
+```
+
+#### Two-Way Plot
+
+A simpler heatmap view using plotnine:
+
+```python
+plot = sdc.two_way_plot(alpha=0.05)
+plot.save("sdc_two_way.png", dpi=150)
+```
+
+### Key Features
+
+- **Auto frequency detection**: Works with daily, weekly, monthly, or irregular time series
+- **Performance optimized**: 50-250x faster than previous versions using vectorized operations
+- **Flexible methods**: Pearson, Spearman, or custom correlation functions
+- **Excel I/O**: Save and load analyses with `sdc.to_excel()` / `SDCAnalysis.from_excel()`
 
 ## Development
 
