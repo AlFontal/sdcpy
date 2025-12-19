@@ -146,8 +146,8 @@ class SDCAnalysis:
             .apply(lambda dd: dd.cat_value.value_counts(True), include_groups=False)
             .loc[lambda x: x > threshold]
             .reset_index()
-            .drop(columns="cat_value")
-            .rename(columns={"level_1": "cat_value"})
+            .rename(columns={"level_1": "cat_value"}, errors="ignore")
+            .drop(columns=["proportion"], errors="ignore")
             .merge(
                 self.sdc_df.reset_index().rename(columns={"index": "comparison_id"})[
                     ["r", "p_value", "comparison_id"]
@@ -480,11 +480,12 @@ class SDCAnalysis:
                 ],
                 include_groups=False,
             )
-            .reset_index(drop=True)
+            .reset_index(level=0)
             .groupby(["date_1"])
             .apply(
                 lambda dd: dd.loc[dd["lag"].abs() == dd["lag"].abs().min()], include_groups=False
             )
+            .reset_index(level=0)
             .assign(
                 date_1=lambda dd: dd.date_1 + pd.to_timedelta(self.fragment_size // 2, unit="days")
             )
