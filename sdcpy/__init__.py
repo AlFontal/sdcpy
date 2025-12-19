@@ -2,7 +2,7 @@
 
 __author__ = """Alejandro Fontal"""
 __email__ = "alejandrofontal92@gmail.com"
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 # Public API
 from sdcpy.core import compute_sdc, generate_correlation_map, shuffle_along_axis
