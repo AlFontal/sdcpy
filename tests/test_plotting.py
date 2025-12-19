@@ -4,30 +4,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pytest
 
-from sdcpy import SDCAnalysis, plot_two_way_sdc
+from sdcpy import SDCAnalysis
 
 # Use non-interactive backend for testing
 matplotlib.use("Agg")
-
-
-class TestPlotTwoWaySDC:
-    """Tests for the standalone plot_two_way_sdc function."""
-
-    def test_returns_plotnine_ggplot(self, random_ts_pair):
-        """Should return a plotnine ggplot object."""
-        from plotnine.ggplot import ggplot
-
-        ts1, ts2 = random_ts_pair
-        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        result = plot_two_way_sdc(sdc.sdc_df)
-        assert isinstance(result, ggplot)
-
-    def test_with_custom_alpha(self, random_ts_pair):
-        """Should work with custom alpha value."""
-        ts1, ts2 = random_ts_pair
-        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        result = plot_two_way_sdc(sdc.sdc_df, alpha=0.01)
-        assert result is not None
 
 
 class TestSDCAnalysisPlotting:
