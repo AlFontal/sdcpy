@@ -27,6 +27,36 @@ Or using [uv](https://docs.astral.sh/uv/):
 uv pip install sdcpy
 ```
 
+## Usage
+
+```python
+import numpy as np
+import pandas as pd
+from sdcpy import SDCAnalysis
+
+# Synthetic signal with transient pattern between indices 63-169
+def tc_signal(i):
+    error = np.random.normal()
+    if 63 <= i <= 169:
+        return np.sin(2 * np.pi * (1 / 37) * i) + 0.6 * error
+    return error
+
+np.random.seed(42)
+ts1 = pd.Series([tc_signal(i) for i in range(250)])
+ts2 = pd.Series([tc_signal(i) for i in range(250)])
+
+# Run SDC analysis
+sdc = SDCAnalysis(ts1, ts2, fragment_size=50, n_permutations=99)
+
+# Generate combination plot
+fig = sdc.combi_plot(xlabel="TS1", ylabel="TS2")
+fig.savefig("sdc_plot.png", dpi=150, bbox_inches="tight")
+```
+
+<img src="sdc_example.png" width="500" />
+
+See [examples/basic_usage.py](examples/basic_usage.py) for a complete example with synthetic data showing transient correlations.
+
 ## Development
 
 To set up a local development environment:
