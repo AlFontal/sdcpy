@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import plotnine as p9
 import seaborn as sns
-from matplotlib import ticker
 
 from sdcpy.core import compute_sdc
 from sdcpy.io import load_from_excel, save_to_excel
@@ -25,6 +24,82 @@ __all__ = [
     "compute_sdc",
     "plot_two_way_sdc",
 ]
+
+
+def _determine_frequency_info(index: pd.Index) -> tuple[str, float, str]:
+    """
+    Determine frequency information for time series index.
+
+    Parameters
+    ----------
+    index : pandas.Index
+        The index of the time series
+
+    Returns
+    -------
+    tuple: (freq_str, freq_mult, freq_unit)
+        freq_str: Human-readable frequency description (e.g., "days", "weeks")
+        freq_mult: Numeric multiplier for the frequency
+        freq_unit: Pandas time unit ('D', 'W', etc.)
+    """
+    # Check if index is datetime-like
+    is_datetime_index = pd.api.types.is_datetime64_any_dtype(index)
+
+    if not is_datetime_index:
+        # Non-datetime index - use integer positioning
+        return "periods", 1, "D"
+
+    frequency = pd.infer_freq(index)
+    if frequency:
+        import re
+
+        # Handle daily frequencies (1D, 2D, 3D, etc.)
+        if re.match(r"^[0-9]*D$", frequency):
+            freq_mult = 1
+            match = re.match(r"^([0-9]+)D$", frequency)
+            if match:
+                freq_mult = int(match.group(1))
+            freq_str = "days" if freq_mult == 1 else f"{freq_mult}-day periods"
+            return freq_str, freq_mult, "D"
+
+        # Handle weekly frequencies (1W, 2W, etc.)
+        elif re.match(r"^[0-9]*W", frequency):
+            freq_mult = 1
+            match = re.match(r"^([0-9]+)W", frequency)
+            if match:
+                freq_mult = int(match.group(1))
+            freq_str = "weeks" if freq_mult == 1 else f"{freq_mult}-week periods"
+            return freq_str, freq_mult * 7, "D"  # Convert to days for timedelta
+
+        # Handle monthly frequencies
+        elif frequency.startswith("M") or frequency.startswith("MS"):
+            freq_mult = 1
+            match = re.match(r"^([0-9]+)", frequency)
+            if match:
+                freq_mult = int(match.group(1))
+            freq_str = "months" if freq_mult == 1 else f"{freq_mult}-month periods"
+            return freq_str, freq_mult * 30.44, "D"
+
+        # Handle yearly frequencies
+        elif frequency.startswith("Y") or frequency.startswith("A"):
+            freq_mult = 1
+            match = re.match(r"^([0-9]+)", frequency)
+            if match:
+                freq_mult = int(match.group(1))
+            freq_str = "years" if freq_mult == 1 else f"{freq_mult}-year periods"
+            return freq_str, freq_mult * 365.25, "D"
+
+    # For irregular frequency, estimate from median difference
+    try:
+        median_diff = index.to_series().diff().median()
+        if hasattr(median_diff, "days"):
+            freq_mult = median_diff.days
+        else:
+            freq_mult = 1
+    except Exception:
+        freq_mult = 1
+
+    return "periods", max(1, freq_mult), "D"
 
 
 class SDCAnalysis:
@@ -256,7 +331,7 @@ class SDCAnalysis:
         ylabel: str = "",
         title: str = None,
         max_r: float = None,
-        date_fmt: str = "%m-%d",
+        date_fmt: str = None,
         align: str = "center",
         max_lag: int = np.inf,
         min_lag: int = -np.inf,
@@ -264,10 +339,80 @@ class SDCAnalysis:
         wspace: float = 1.0,
         hspace: float = 1.0,
         show_colorbar: bool = True,
+        show_ts2: bool = True,
+        metric_label: str = None,
         **kwargs,
     ) -> "MplFigure":
-        # Setting up parameters
-        title = f"SDC plot (s = {self.fragment_size})" if title is None else title
+        """
+        Create a combination plot showing SDC analysis results.
+
+        Parameters
+        ----------
+        alpha : float, default 0.05
+            Significance level for masking non-significant correlations.
+        xlabel : str, default ""
+            Label for time series 1 (top axis).
+        ylabel : str, default ""
+            Label for time series 2 (left axis).
+        title : str, optional
+            Plot title. Defaults to "SDC plot (s = {fragment_size} {freq_str})".
+        max_r : float, optional
+            Maximum absolute correlation for color scale. Auto-detected if None.
+        date_fmt : str, optional
+            Date format string. Auto-detected based on time series frequency.
+        align : str, default "center"
+            Alignment of heatmap cells: "left", "center", or "right".
+        max_lag : int, default np.inf
+            Maximum lag to display.
+        min_lag : int, default -np.inf
+            Minimum lag to display.
+        labels_fontsize : int, default 12
+            Font size for axis labels.
+        wspace : float, default 1.0
+            Width space between subplots.
+        hspace : float, default 1.0
+            Height space between subplots.
+        show_colorbar : bool, default True
+            Whether to show the colorbar.
+        show_ts2 : bool, default True
+            Whether to show time series 2 on the left side.
+        metric_label : str, optional
+            Label for the correlation metric. Defaults to method name.
+        **kwargs
+            Additional keyword arguments passed to plt.figure().
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The generated figure.
+        """
+        # Get frequency information for proper labeling and offsets
+        freq_str, freq_mult, freq_unit = _determine_frequency_info(self.ts1.index)
+
+        # Auto-detect date format based on frequency
+        if date_fmt is None:
+            if freq_mult >= 365:
+                date_fmt = "%Y"
+            elif freq_mult >= 28:
+                date_fmt = "%Y-%m"
+            elif freq_mult >= 7:
+                date_fmt = "%m-%d"
+            else:
+                date_fmt = "%m-%d"
+
+        # Set default title with frequency info
+        if title is None:
+            title = f"SDC plot (s = {self.fragment_size} {freq_str})"
+
+        # Set default metric label
+        if metric_label is None:
+            metric_labels = {
+                "pearson": "Pearson's $r$",
+                "spearman": "Spearman's $\\rho$",
+            }
+            metric_label = metric_labels.get(self.method, self.method.capitalize())
+
+        # Validate alignment
         align = align.lower()
         if align not in ["left", "center", "right"]:
             warnings.warn(
@@ -275,73 +420,109 @@ class SDCAnalysis:
                 stacklevel=2,
             )
             align = "center"
+
+        # Calculate offsets
         offset = self.fragment_size // 2 if align == "center" else self.fragment_size
         left_offset = 0 if align == "left" else offset
         right_offset = 0 if align == "right" else offset
 
+        # Calculate timedelta offset using detected frequency
+        timedelta_offset = pd.to_timedelta(left_offset * freq_mult, unit=freq_unit)
+
         date_format = mdates.DateFormatter(date_fmt)
+        sdc_df = self.sdc_df.copy()
         fig = plt.figure(**kwargs)
-        # We are organizing the grid in a 5 x 5 matrix so that (TT=Title, HM: Heatmap, TS1/TS2: Time-Series 1/2,
-        # MC: Max Correlations):
-        # TT TT TT TT TT
-        # NA TS1 TS1 NA NA
+
+        # Dynamic grid layout based on lag range and show_ts2
+        # Grid layout:
+        # TT TT TT TT TT (title row)
+        # NA TS1 TS1 NA NA (time series 1)
+        # TS2 HM HM MC2 CB (heatmap + max corr 2 + colorbar)
         # TS2 HM HM MC2 CB
-        # TS2 HM HM MC2 CB
-        # NA MC1 MC1 NA NA
+        # NA MC1 MC1 NA NA (max corr 1)
+        ts2_col = 1 if show_ts2 else 0
+
         if min_lag < 0 < max_lag:
+            width_ratios = [1, 2, 2, 1, 0.2] if show_ts2 else [2, 2, 1, 0.2]
             gs = fig.add_gridspec(
-                5, 5, height_ratios=[0.15, 1.5, 2, 2, 1.5], width_ratios=[1.5, 2, 2, 1, 0.2]
+                5, len(width_ratios), height_ratios=[0.15, 1, 2, 2, 1], width_ratios=width_ratios
             )
+            hm_cols = slice(ts2_col, ts2_col + 2)
+            mc2_col = ts2_col + 2
+            cb_col = -1
         elif min_lag < 0:
+            width_ratios = [1, 2, 2, 0.3] if show_ts2 else [2, 2, 0.3]
             gs = fig.add_gridspec(
-                5, 4, height_ratios=[0.15, 1.5, 2, 2, 1], width_ratios=[1.5, 2, 2, 0.3]
+                5, len(width_ratios), height_ratios=[0.15, 1, 2, 2, 1], width_ratios=width_ratios
             )
+            hm_cols = slice(ts2_col, ts2_col + 2)
+            mc2_col = None
+            cb_col = -1
         elif max_lag > 0:
+            width_ratios = [1, 2, 2, 1, 0.2] if show_ts2 else [2, 2, 1, 0.2]
             gs = fig.add_gridspec(
-                4, 5, height_ratios=[0.15, 1.5, 2, 1], width_ratios=[1, 2, 2, 1, 0.2]
+                4, len(width_ratios), height_ratios=[0.15, 1, 2, 1], width_ratios=width_ratios
             )
+            hm_cols = slice(ts2_col, ts2_col + 2)
+            mc2_col = ts2_col + 2
+            cb_col = -1
         else:
             raise ValueError("Range of lags to be considered should be bigger than 1")
-        # Time series 1
-        ts1 = fig.add_subplot(gs[1, 1:3])
-        ts1.plot(self.ts1, color="black")
-        # Time series 2
-        ts2 = fig.add_subplot(gs[2:4, 0])
-        plt.plot(self.ts2, self.ts2.reset_index()["date_2"], color="black")
-        # Heat map
-        hm = fig.add_subplot(gs[2:4, 1:3])
 
-        (
-            self.sdc_df.loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)].pipe(
-                lambda dd: sns.heatmap(
-                    dd.pivot(index="date_2", columns="date_1", values="r"),
-                    cbar=False,
-                    mask=dd.pivot(index="date_2", columns="date_1", values="p_value") > alpha,
-                    cmap=sns.diverging_palette(10, 220, sep=80, n=20),
-                    ax=hm,
-                )
-            )
+        # Time series 1 (top)
+        ts1_ax = fig.add_subplot(gs[1, hm_cols])
+        ts1_ax.plot(self.ts1, color="black", linewidth=1)
+
+        # Time series 2 (left)
+        if show_ts2:
+            ts2_ax = fig.add_subplot(gs[2:4, 0])
+            ts2_ax.plot(self.ts2.values, self.ts2.index, color="black", linewidth=1)
+
+        # Heatmap
+        hm = fig.add_subplot(gs[2:4, hm_cols])
+
+        # Filter data and create heatmap
+        filtered_df = sdc_df.loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
+        pivot_r = filtered_df.pivot(index="date_2", columns="date_1", values="r")
+        pivot_p = filtered_df.pivot(index="date_2", columns="date_1", values="p_value")
+        mask = pivot_p >= alpha
+
+        sns.heatmap(
+            pivot_r,
+            cbar=False,
+            mask=mask,
+            cmap="RdBu_r",
+            ax=hm,
         )
-        # Add identity line to ease shift visualization
+
+        # Add identity line
         identity_len = min(len(self.ts1), len(self.ts2)) - self.fragment_size + 1
-        plt.plot(range(identity_len), range(identity_len), linestyle=":", color="black", alpha=0.8)
-        # Correct and format ticks, labels, grids
-        # Hide Heatmap labels and ticks
+        hm.plot(
+            range(identity_len),
+            range(identity_len),
+            linestyle=":",
+            color="black",
+            alpha=0.4,
+            linewidth=1,
+        )
+
+        # Hide heatmap labels and ticks
         hm.set_xlabel("")
         hm.set_ylabel("")
+        hm.tick_params(axis="both", which="both", length=0)
         plt.setp(hm.get_yticklabels(), visible=False)
         plt.setp(hm.get_xticklabels(), visible=False)
-        # Each dot in the heatmap represents a `fragment_size` long region of the time-series, so we need to choose how
-        # to represent each dot because the heatmap axis are `fragment_size` shorter than the time-series axis.
-        # Alignment parameter comes then into play:
-        xmin, xmax = plt.xlim()
-        ymin, ymax = plt.ylim()
-        max_r = max_r if max_r is not None else self.sdc_df.r.abs().max()
+
+        # Adjust heatmap limits for alignment
+        xmin, xmax = hm.get_xlim()
+        ymin, ymax = hm.get_ylim()
+        max_r = max_r if max_r is not None else sdc_df["r"].abs().max()
         hm.set_xlim(xmin - left_offset, xmax + right_offset)
         hm.set_ylim(ymin + right_offset, ymax - left_offset)
+
+        # Add fragment size indicator
         trans_x = hm.get_xaxis_transform()
         trans_y = hm.get_yaxis_transform()
-
         hm.plot(
             [-self.fragment_size / 2, self.fragment_size / 2],
             [1.0, 1.0],
@@ -360,48 +541,56 @@ class SDCAnalysis:
             linewidth=5,
             solid_capstyle="butt",
         )
-
         hm.annotate(
-            f"$s={self.fragment_size}$",
+            f"$s={self.fragment_size}$ {freq_str}",
             xy=(self.fragment_size / 2 + 5, 0.99),
             xycoords=trans_x,
-            size=9,
+            fontsize=labels_fontsize,
         )
 
-        # Handle TS1 labels and ticks
-        ts1.xaxis.set_major_formatter(date_format)
-        ts1.set_xlim(self.ts1.index[0], self.ts1.index[-1])
-        ts1.xaxis.set_major_locator(ticker.MultipleLocator(len(self.ts1) / 2))
-        ts1.grid(True, which="major")
-        ts1.set_xlabel(xlabel, fontsize=labels_fontsize)
-        ts1.xaxis.set_label_position("top")
+        # Format TS1 axis
+        ts1_ax.xaxis.set_major_formatter(date_format)
+        ts1_ax.xaxis.set_label_position("top")
+        ts1_ax.set_xlim(self.ts1.index[0], self.ts1.index[-1])
+        ts1_ax.grid(True, which="major", axis="x", linestyle="--", alpha=0.5)
+        ts1_ax.set_xlabel(xlabel, fontsize=labels_fontsize + 2)
+        ts1_ax.tick_params(
+            axis="x",
+            top=True,
+            labeltop=True,
+            labelbottom=False,
+            bottom=False,
+            labelsize=labels_fontsize,
+        )
 
-        # Handle TS2 labels and ticks
-        ts2.yaxis.set_major_formatter(date_format)
-        ts2.set_ylim(self.ts2.index[0], self.ts2.index[-1])
-        ts2.yaxis.set_major_locator(ticker.MultipleLocator(len(self.ts2) / 2))
-        ts2.grid(True, which="major")
-        ts2.yaxis.tick_right()
-        ts2.invert_xaxis()
-        ts2.invert_yaxis()
-        ts2.set_ylabel(ylabel, fontsize=labels_fontsize)
-        plt.setp(ts2.get_yticklabels(), visible=True, rotation=90, va="center")
+        # Format TS2 axis
+        if show_ts2:
+            ts2_ax.yaxis.set_major_formatter(date_format)
+            ts2_ax.set_ylim(self.ts2.index[0], self.ts2.index[-1])
+            ts2_ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5)
+            ts2_ax.invert_xaxis()
+            ts2_ax.invert_yaxis()
+            ts2_ax.set_ylabel(ylabel, fontsize=labels_fontsize + 2)
+            plt.setp(ts2_ax.get_yticklabels(), visible=True, rotation=90, va="center")
+            ts2_ax.tick_params(
+                axis="y",
+                right=True,
+                labelright=True,
+                labelleft=False,
+                left=False,
+                labelsize=labels_fontsize,
+            )
+
         gs.update(wspace=wspace, hspace=hspace)
-        # Max Correlations
-        colors = {"Max $r$": "#3f7f93", "Min $r$ (abs)": "#da3b46"}
+
+        # Max correlations scatter plots
+        colors = {"Max $r$": "#A81529", "Min $r$ (abs)": "#144E8A"}
+
         if min_lag < 0:
-            mc1 = fig.add_subplot(gs[-1, 1:3])
-            (
-                self.sdc_df.loc[lambda dd: dd.p_value < alpha]
-                .loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
-                .groupby("date_1")
-                .apply(
-                    lambda dd: dd.loc[dd["r"].abs() == dd["r"].abs().max()].loc[
-                        lambda d: d["lag"] == d["lag"].min()
-                    ],
-                    include_groups=False,
-                )
-                .reset_index(level=0)
+            mc1 = fig.add_subplot(gs[-1, hm_cols])
+            mc1_data = (
+                sdc_df.query("p_value < @alpha")
+                .query("(lag <= @max_lag) & (lag >= @min_lag)")
                 .groupby("date_1")
                 .agg(
                     r_max=("r", lambda x: x.where(x > 0).max()),
@@ -410,32 +599,34 @@ class SDCAnalysis:
                 .rename(columns={"r_max": "Max $r$", "r_min": "Min $r$ (abs)"})
                 .reset_index()
                 .melt("date_1")
-                .assign(date_1=lambda dd: dd.date_1 + pd.to_timedelta(f"{left_offset} days"))
-                .assign(color=lambda dd: dd.variable.apply(lambda x: colors[x]))
-                .plot.scatter(
+                .assign(date_1=lambda dd: dd.date_1 + timedelta_offset)
+                .assign(color=lambda dd: dd.variable.map(colors))
+                .dropna(subset=["value"])
+            )
+            if len(mc1_data) > 0:
+                mc1_data.plot.scatter(
                     x="date_1",
                     y="value",
                     c="color",
                     ax=mc1,
-                    style="-",
-                    alpha=1,
+                    alpha=0.7,
                     colorbar=False,
-                    s=10,
+                    linewidths=0,
                 )
-            )
             plt.setp(mc1.get_xticklabels(), visible=False)
             mc1.set_xlabel("")
-            mc1.set_ylabel("Max abs($\\rho$)")
+            mc1.set_ylabel("Max |corr|")
             mc1.yaxis.set_label_position("right")
             mc1.set_xlim(self.ts1.index[0], self.ts1.index[-1])
             mc1.set_ylim(0, 1.05)
             mc1.grid(True, which="major")
             mc1.set_yticks([0, 0.5, 1])
-        if max_lag > 0:
-            mc2 = fig.add_subplot(gs[2:4, 3])
-            (
-                self.sdc_df.loc[lambda dd: dd.p_value < alpha]
-                .loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
+
+        if max_lag > 0 and mc2_col is not None:
+            mc2 = fig.add_subplot(gs[2:4, mc2_col])
+            mc2_data = (
+                sdc_df.query("p_value < @alpha")
+                .query("(lag <= @max_lag) & (lag >= @min_lag)")
                 .groupby("date_2")
                 .agg(
                     r_max=("r", lambda x: x.where(x > 0).max()),
@@ -444,14 +635,22 @@ class SDCAnalysis:
                 .rename(columns={"r_max": "Max $r$", "r_min": "Min $r$ (abs)"})
                 .reset_index()
                 .melt("date_2")
-                .assign(date_2=lambda dd: dd.date_2 + pd.to_timedelta(f"{left_offset} days"))
-                .assign(color=lambda dd: dd.variable.apply(lambda x: colors[x]))
-                .plot.scatter(
-                    x="value", y="date_2", c="color", ax=mc2, style="o", alpha=0.7, colorbar=False
-                )
+                .assign(date_2=lambda dd: dd.date_2 + timedelta_offset)
+                .assign(color=lambda dd: dd.variable.map(colors))
+                .dropna(subset=["value"])
             )
+            if len(mc2_data) > 0:
+                mc2_data.plot.scatter(
+                    x="value",
+                    y="date_2",
+                    c="color",
+                    ax=mc2,
+                    alpha=0.7,
+                    colorbar=False,
+                    linewidths=0,
+                )
             plt.setp(mc2.get_yticklabels(), visible=False)
-            mc2.set_xlabel("Max / Min $r$")
+            mc2.set_xlabel("Max |corr|")
             mc2.set_ylabel("")
             mc2.grid(True, which="major")
             mc2.set_xlim(1.05, 0)
@@ -459,11 +658,11 @@ class SDCAnalysis:
 
         # Colorbar
         if show_colorbar:
-            cax = fig.add_subplot(gs[2:4, -1])
-        color_mesh = hm.get_children()[0]
-        color_mesh.set_clim(-max_r, max_r)
-        if show_colorbar:
-            fig.colorbar(color_mesh, cax=cax, label=f"{self.method.capitalize()}'s $\\rho$")
+            cax = fig.add_subplot(gs[2:4, cb_col])
+            color_mesh = hm.get_children()[0]
+            color_mesh.set_clim(-max_r, max_r)
+            fig.colorbar(color_mesh, cax=cax, label=metric_label, pad=0.05)
+
         fig.suptitle(title)
 
         return fig
