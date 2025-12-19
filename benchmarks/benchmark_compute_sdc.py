@@ -2,7 +2,9 @@
 """Benchmark script for compute_sdc optimization."""
 
 import time
+
 import numpy as np
+
 from sdcpy.core import compute_sdc
 
 
@@ -42,6 +44,9 @@ if __name__ == "__main__":
         {"ts_length": 50, "fragment_size": 10, "n_permutations": 49},
         {"ts_length": 100, "fragment_size": 10, "n_permutations": 49},
         {"ts_length": 100, "fragment_size": 10, "n_permutations": 99},
+        # Weekly data scenarios (52 weeks/year)
+        {"ts_length": 156, "fragment_size": 12, "n_permutations": 99},  # ~3 years weekly
+        {"ts_length": 260, "fragment_size": 12, "n_permutations": 99},  # ~5 years weekly
     ]
 
     results = {}

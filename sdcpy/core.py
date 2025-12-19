@@ -209,36 +209,48 @@ def _compute_sdc_vectorized(
     if permutations:
         n_root = int(np.sqrt(n_permutations).round())
         n_actual_perms = n_root * n_root
-        p_values = np.zeros(n_valid)
 
-        # Process in batches for memory efficiency
-        batch_size = 500
-        for batch_start in tqdm(
-            range(0, n_valid, batch_size), desc="Computing p-values", leave=False
-        ):
-            batch_end = min(batch_start + batch_size, n_valid)
-            batch_indices = range(batch_start, batch_end)
+        # OPTIMIZED: Pre-shuffle all fragments and compute full permuted correlation matrices
+        # This is much faster than shuffling per-pair because we compute n_root^2 full
+        # correlation matrices instead of n_valid individual permutation tests
 
-            for idx in batch_indices:
-                i, j = start_1_vals[idx], start_2_vals[idx]
-                frag1 = frags1[i]
-                frag2 = frags2[j]
-                statistic = r_vals[idx]
+        # Pre-compute shuffled versions of all fragments
+        # Shape: (n_root, n_fragments, fragment_size)
+        shuffled_frags1 = np.array(
+            [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
+        )
+        shuffled_frags2 = np.array(
+            [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
+        )
 
-                # Generate permuted fragments
-                permuted_1 = shuffle_along_axis(np.tile(frag1, n_root).reshape(n_root, -1), axis=1)
-                permuted_2 = shuffle_along_axis(np.tile(frag2, n_root).reshape(n_root, -1), axis=1)
-                permuted_scores = generate_correlation_map(
-                    permuted_1, permuted_2, method=method
-                ).reshape(-1)
-
-                if two_tailed:
-                    p_values[idx] = (
-                        1
-                        - stats.percentileofscore(np.abs(permuted_scores), np.abs(statistic)) / 100
+        # Compute permuted correlation matrices for all combinations of shuffled fragments
+        # Shape: (n_root, n_root, n1, n2)
+        perm_corr_matrices = np.zeros((n_root, n_root, n1, n2))
+        for i in tqdm(range(n_root), desc="Computing permutations", leave=False):
+            for j in range(n_root):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    perm_corr_matrices[i, j] = generate_correlation_map(
+                        shuffled_frags1[i], shuffled_frags2[j], method=method
                     )
-                else:
-                    p_values[idx] = 1 - stats.percentileofscore(permuted_scores, statistic) / 100
+
+        # Reshape to (n_actual_perms, n1, n2)
+        perm_corrs_flat = perm_corr_matrices.reshape(n_actual_perms, n1, n2)
+
+        # Compute p-values vectorized
+        if two_tailed:
+            # Count how many abs(perm) >= abs(observed) for each position
+            abs_observed = np.abs(corr_matrix)
+            abs_perms = np.abs(perm_corrs_flat)
+            counts = (abs_perms >= abs_observed[np.newaxis, :, :]).sum(axis=0)
+        else:
+            counts = (perm_corrs_flat >= corr_matrix[np.newaxis, :, :]).sum(axis=0)
+
+        # P-value: (count + 1) / (n_perms + 1) for proper permutation test
+        p_value_matrix = (counts + 1) / (n_actual_perms + 1)
+
+        # Extract p-values for valid entries
+        p_values = p_value_matrix[valid_mask]
     else:
         # Use scipy's p-values
         p_values = np.zeros(n_valid)
@@ -279,7 +291,7 @@ def _compute_sdc_loop(
     """Original loop-based implementation for custom callable methods."""
     method_fun = method
     n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
-    n_root = int(np.sqrt(n_permutations).round())
+    int(np.sqrt(n_permutations).round())
     sdc_array = np.empty(shape=(n_iterations, 7))
     sdc_array[:] = np.nan
     i = 0
