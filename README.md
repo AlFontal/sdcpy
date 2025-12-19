@@ -48,7 +48,7 @@ ts2 = pd.Series([tc_signal(i) for i in range(250)])
 # Run SDC analysis
 sdc = SDCAnalysis(ts1, ts2, fragment_size=50, n_permutations=99)
 
-# Generate combination plot
+# Generate 2-way SDC combi plot
 fig = sdc.combi_plot(xlabel="TS1", ylabel="TS2")
 fig.savefig("sdc_plot.png", dpi=150, bbox_inches="tight")
 ```
