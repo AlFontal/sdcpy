@@ -1,6 +1,5 @@
 """Scale Dependent Correlation analysis."""
 
-import warnings
 from typing import TYPE_CHECKING, Callable, Optional, Union
 
 import matplotlib.pyplot as plt

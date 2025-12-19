@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import MaxNLocator
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure as MplFigure
@@ -183,7 +184,6 @@ def combi_plot(
         The generated figure.
     """
     import warnings
-    from matplotlib.ticker import MaxNLocator
 
     # Get frequency information for proper labeling and offsets
     freq_str, freq_mult, freq_unit = _determine_frequency_info(ts1.index)
