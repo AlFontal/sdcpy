@@ -6,11 +6,13 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotnine as p9
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure as MplFigure
+    from plotnine.ggplot import ggplot
 
 
 def _determine_frequency_info(index: pd.Index) -> tuple[str, float, str]:
@@ -89,6 +91,47 @@ def _determine_frequency_info(index: pd.Index) -> tuple[str, float, str]:
     return "periods", max(1, freq_mult), "D"
 
 
+def _prepare_plot_index(index: pd.Index) -> tuple[pd.Index, bool]:
+    """
+    Prepare an index for plotting, handling different index types appropriately.
+
+    Parameters
+    ----------
+    index : pd.Index
+        The index to prepare for plotting.
+
+    Returns
+    -------
+    tuple[pd.Index, bool]
+        A tuple of (prepared_index, is_datetime) where:
+        - prepared_index is the index ready for matplotlib plotting
+        - is_datetime indicates if the index should be treated as datetime
+
+    Raises
+    ------
+    ValueError
+        If the index is string-based but cannot be converted to datetime.
+    """
+    # Check if already datetime
+    if pd.api.types.is_datetime64_any_dtype(index):
+        return index, True
+
+    # Check if numeric (integer or float)
+    if pd.api.types.is_numeric_dtype(index):
+        return index, False
+
+    # Assume string-like, try to convert to datetime
+    try:
+        converted = pd.to_datetime(index)
+        return converted, True
+    except (ValueError, TypeError) as e:
+        raise ValueError(
+            f"Could not convert index to datetime. "
+            f"Index should be either numeric (integer), datetime, or datetime-parseable strings. "
+            f"Original error: {e}"
+        ) from e
+
+
 def combi_plot(
     ts1: pd.Series,
     ts2: pd.Series,
@@ -114,8 +157,8 @@ def combi_plot(
     show_ts2: bool = True,
     metric_label: str = None,
     n_ticks: int = 6,
-    figsize: tuple = (6, 6),
-    dpi: int = 150,
+    figsize: tuple = (7, 7),
+    dpi: int = 250,
     **kwargs,
 ) -> "MplFigure":
     """
@@ -171,9 +214,9 @@ def combi_plot(
         Label for the correlation metric. Defaults to method name.
     n_ticks : int, default 6
         Number of ticks to show on axes.
-    figsize : tuple, default (6, 6)
+    figsize : tuple, default (7, 7)
         Figure size.
-    dpi : int, default 150
+    dpi : int, default 250
         Figure resolution.
     **kwargs
         Additional keyword arguments passed to plt.figure().
@@ -226,17 +269,18 @@ def combi_plot(
     left_offset = 0 if align == "left" else offset
     right_offset = 0 if align == "right" else offset
 
-    # Check if index is datetime for formatting
-    is_datetime_index = pd.api.types.is_datetime64_any_dtype(ts1.index)
+    # Prepare indexes for plotting (handles integer, datetime, and string indexes)
+    ts1_plot_index, ts1_is_datetime = _prepare_plot_index(ts1.index)
+    ts2_plot_index, ts2_is_datetime = _prepare_plot_index(ts2.index)
 
-    # Calculate offset using timedelta for datetime indexes, integer for others
-    if is_datetime_index:
+    # Create offset based on index type
+    if ts1_is_datetime:
         timedelta_offset = pd.to_timedelta(left_offset * freq_mult, unit=freq_unit)
     else:
-        timedelta_offset = left_offset  # Use integer offset for non-datetime
+        timedelta_offset = left_offset  # Integer offset for numeric indexes
 
-    is_datetime_index = pd.api.types.is_datetime64_any_dtype(ts1.index)
-    if is_datetime_index and date_fmt:
+    # Create date formatter if date_fmt is provided and index is datetime-like
+    if date_fmt and ts1_is_datetime:
         date_format = mdates.DateFormatter(date_fmt)
     else:
         date_format = None
@@ -276,12 +320,12 @@ def combi_plot(
 
     # Time series 1 (top)
     ts1_ax = fig.add_subplot(gs[1, hm_cols])
-    ts1_ax.plot(ts1, color="black", linewidth=1)
+    ts1_ax.plot(ts1_plot_index, ts1.values, color="black", linewidth=1)
 
     # Time series 2 (left)
     if show_ts2:
         ts2_ax = fig.add_subplot(gs[2:4, 0])
-        ts2_ax.plot(ts2.values, ts2.index, color="black", linewidth=1)
+        ts2_ax.plot(ts2.values, ts2_plot_index, color="black", linewidth=1)
 
     # Heatmap
     hm = fig.add_subplot(gs[2:4, hm_cols])
@@ -355,8 +399,8 @@ def combi_plot(
 
     # Format TS1 axis
     ts1_ax.xaxis.set_label_position("top")
-    ts1_ax.set_xlim(ts1.index[0], ts1.index[-1])
-    ts1_ax.grid(True, which="major", axis="x", linestyle="--", alpha=0.5)
+    ts1_ax.set_xlim(ts1_plot_index[0], ts1_plot_index[-1])
+    ts1_ax.grid(True, which="major", axis="both", linestyle="--", alpha=0.5)
     ts1_ax.set_xlabel(xlabel, fontsize=label_fontsize)
     ts1_ax.xaxis.set_major_locator(MaxNLocator(nbins=n_ticks, prune="both"))
     if date_format:
@@ -376,8 +420,8 @@ def combi_plot(
 
     # Format TS2 axis
     if show_ts2:
-        ts2_ax.set_ylim(ts2.index[0], ts2.index[-1])
-        ts2_ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5)
+        ts2_ax.set_ylim(ts2_plot_index[0], ts2_plot_index[-1])
+        ts2_ax.grid(True, which="major", axis="both", linestyle="--", alpha=0.5)
         ts2_ax.invert_xaxis()
         ts2_ax.invert_yaxis()
         ts2_ax.set_ylabel(ylabel, fontsize=label_fontsize)
@@ -405,12 +449,12 @@ def combi_plot(
 
     gs.update(wspace=wspace, hspace=hspace)
 
-    # Max correlations scatter plots
+    # Max correlations line plots
     colors = {"Max $r$": "#A81529", "Min $r$ (abs)": "#144E8A"}
 
     if min_lag < 0:
         mc1 = fig.add_subplot(gs[-1, hm_cols])
-        mc1_data = (
+        mc1_base = (
             sdc_df.query("p_value < @alpha")
             .query("(lag <= @max_lag) & (lag >= @min_lag)")
             .groupby("date_1")
@@ -420,35 +464,42 @@ def combi_plot(
             )
             .rename(columns={"r_max": "Max $r$", "r_min": "Min $r$ (abs)"})
             .reset_index()
-            .melt("date_1")
-            .assign(date_1=lambda dd: dd.date_1 + timedelta_offset)
-            .assign(color=lambda dd: dd.variable.map(colors))
-            .dropna(subset=["value"])
         )
-        if len(mc1_data) > 0:
-            mc1_data.plot.scatter(
-                x="date_1",
-                y="value",
-                c="color",
-                ax=mc1,
-                alpha=0.7,
-                colorbar=False,
-                linewidths=0,
+        # Apply offset based on index type
+        if ts1_is_datetime:
+            mc1_data = (
+                mc1_base.assign(date_1=lambda dd: pd.to_datetime(dd.date_1) + timedelta_offset)
+                .set_index("date_1")
+                .sort_index()
             )
+        else:
+            mc1_data = (
+                mc1_base.assign(date_1=lambda dd: dd.date_1 + timedelta_offset)
+                .set_index("date_1")
+                .sort_index()
+            )
+        if len(mc1_data) > 0:
+            # Plot each correlation type as a separate line
+            for col_name, color in colors.items():
+                if col_name in mc1_data.columns:
+                    data = mc1_data[col_name].dropna()
+                    if len(data) > 0:
+                        mc1.plot(data.index, data.values, color=color, alpha=1, linewidth=1.3)
         plt.setp(mc1.get_xticklabels(), visible=False)
         mc1.set_xlabel("")
         mc1.set_ylabel("Max |corr|", fontsize=label_fontsize)
         mc1.yaxis.set_label_position("right")
-        mc1.set_xlim(ts1.index[0], ts1.index[-1])
+        mc1.set_xlim(ts1_plot_index[0], ts1_plot_index[-1])
         mc1.set_ylim(0, 1.05)
-        mc1.grid(True, which="major")
+        mc1.xaxis.set_major_locator(MaxNLocator(nbins=n_ticks, prune="both"))  # Match ts1 ticks
+        mc1.grid(True, which="major", axis="both", linestyle="--", alpha=0.5)
         mc1.set_yticks([0, 0.5, 1])
         mc1.tick_params(axis="y", labelsize=tick_fontsize)
         mc1.tick_params(axis="x", bottom=False, top=False, labelbottom=False, labeltop=False)
 
     if max_lag > 0 and mc2_col is not None:
         mc2 = fig.add_subplot(gs[2:4, mc2_col])
-        mc2_data = (
+        mc2_base = (
             sdc_df.query("p_value < @alpha")
             .query("(lag <= @max_lag) & (lag >= @min_lag)")
             .groupby("date_2")
@@ -458,29 +509,36 @@ def combi_plot(
             )
             .rename(columns={"r_max": "Max $r$", "r_min": "Min $r$ (abs)"})
             .reset_index()
-            .melt("date_2")
-            .assign(date_2=lambda dd: dd.date_2 + timedelta_offset)
-            .assign(color=lambda dd: dd.variable.map(colors))
-            .dropna(subset=["value"])
         )
-        if len(mc2_data) > 0:
-            mc2_data.plot.scatter(
-                x="value",
-                y="date_2",
-                c="color",
-                ax=mc2,
-                alpha=0.7,
-                colorbar=False,
-                linewidths=0,
+        # Apply offset based on index type
+        if ts2_is_datetime:
+            mc2_data = (
+                mc2_base.assign(date_2=lambda dd: pd.to_datetime(dd.date_2) + timedelta_offset)
+                .set_index("date_2")
+                .sort_index()
             )
+        else:
+            mc2_data = (
+                mc2_base.assign(date_2=lambda dd: dd.date_2 + timedelta_offset)
+                .set_index("date_2")
+                .sort_index()
+            )
+        if len(mc2_data) > 0:
+            # Plot each correlation type as a separate line (x=value, y=date for vertical orientation)
+            for col_name, color in colors.items():
+                if col_name in mc2_data.columns:
+                    data = mc2_data[col_name].dropna()
+                    if len(data) > 0:
+                        mc2.plot(data.values, data.index, color=color, alpha=1, linewidth=1.3)
         plt.setp(mc2.get_yticklabels(), visible=False)
         mc2.set_xlabel("Max |corr|", fontsize=label_fontsize)
         mc2.xaxis.set_label_position("top")
         mc2.set_ylabel("")
-        mc2.grid(True, which="major")
         mc2.set_xlim(1.05, 0)
         mc2.set_xticks([0, 0.5, 1])  # Match mc1's y-axis breaks
-        mc2.set_ylim(ts2.index[-1], ts2.index[0])
+        mc2.set_ylim(ts2_plot_index[-1], ts2_plot_index[0])
+        mc2.yaxis.set_major_locator(MaxNLocator(nbins=n_ticks, prune="both"))  # Match ts2 ticks
+        mc2.grid(True, which="major", axis="both", linestyle="--", alpha=0.5)
         # Move x-axis ticks to top
         mc2.tick_params(
             axis="x",
@@ -504,5 +562,63 @@ def combi_plot(
     fig.set_dpi(dpi)
     if title:
         fig.suptitle(title)
+
+    return fig
+
+
+def plot_range_comparison(
+    ranges_df: pd.DataFrame,
+    xlabel: str = "",
+    figsize: tuple[int, int] = (7, 3),
+    add_text_label: bool = True,
+) -> "ggplot":
+    """
+    Create a bar chart showing correlation directions by value ranges.
+
+    Parameters
+    ----------
+    ranges_df : pd.DataFrame
+        DataFrame from SDCAnalysis.get_ranges_df() with columns:
+        cat_value, direction, counts, n, freq, label.
+    xlabel : str, default=""
+        Label for the x-axis.
+    figsize : tuple[int, int], default=(7, 3)
+        Figure size as (width, height).
+    add_text_label : bool, default=True
+        Whether to add percentage labels on the bars.
+
+    Returns
+    -------
+    ggplot
+        A plotnine ggplot object.
+    """
+    fig = (
+        p9.ggplot(ranges_df)
+        + p9.aes("cat_value", "counts", fill="direction")
+        + p9.geom_col(alpha=0.8)
+        + p9.theme(figure_size=figsize, axis_text_x=p9.element_text(rotation=45))
+        + p9.scale_fill_manual(["#3f7f93", "#da3b46", "#4d4a4a"])
+        + p9.labs(x=xlabel, y="Number of Comparisons", fill="R")
+    )
+
+    if add_text_label:
+        positive_data = ranges_df.loc[(ranges_df.direction == "Positive") & (ranges_df.counts > 0)]
+        if len(positive_data) > 0:
+            fig += p9.geom_text(
+                p9.aes(label="label", x="cat_value", y="n + max(n) * .15"),
+                inherit_aes=False,
+                size=9,
+                data=positive_data,
+                color="#3f7f93",
+            )
+        negative_data = ranges_df.loc[(ranges_df.direction == "Negative") & (ranges_df.counts > 0)]
+        if len(negative_data) > 0:
+            fig += p9.geom_text(
+                p9.aes(label="label", x="cat_value", y="n + max(n) * .05"),
+                inherit_aes=False,
+                size=9,
+                data=negative_data,
+                color="#da3b46",
+            )
 
     return fig

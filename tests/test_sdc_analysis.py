@@ -22,8 +22,9 @@ class TestSDCAnalysisBasic:
         """Should accept numpy arrays and auto-generate dates."""
         ts1, ts2 = numpy_ts_pair
         sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        # Should have created date indices starting from 2000-01-01
-        assert pd.Timestamp("2000-01-01") in sdc.ts1.index
+        # Should have created integer indices
+        assert 0 in sdc.ts1.index
+        assert pd.api.types.is_integer_dtype(sdc.ts1.index)
         assert len(sdc.sdc_df) > 0
 
     def test_one_way_sdc(self, random_ts_pair):
