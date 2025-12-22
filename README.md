@@ -50,10 +50,56 @@ sdc = SDCAnalysis(ts1, ts2, fragment_size=50, n_permutations=99)
 
 # Generate 2-way SDC combi plot
 fig = sdc.combi_plot(xlabel="TS1", ylabel="TS2")
-fig.savefig("sdc_plot.png", dpi=150, bbox_inches="tight")
+fig.savefig("sdc_plot.png", dpi=250, bbox_inches="tight")
 ```
 
 <img src="sdc_example.png" width="500" />
+
+### Access Detailed Results
+
+You can access the detailed SDC results DataFrame via `sdc.sdc_df`. This contains the coordinates of each fragment, lag, correlation, and p-value.
+
+```python
+sdc.sdc_df.head()
+```
+
+```text
+   start_1  stop_1  start_2  stop_2  lag       r  p_value  date_1  date_2
+0      0.0    50.0      0.0    50.0  0.0  0.2267   0.0495       0       0
+1      0.0    50.0      1.0    51.0 -1.0 -0.0047   1.0000       0       1
+2      0.0    50.0      2.0    52.0 -2.0  0.0579   0.6238       0       2
+3      0.0    50.0      3.0    53.0 -3.0  0.0602   0.6337       0       3
+4      0.0    50.0      4.0    54.0 -4.0 -0.1660   0.2475       0       4
+```
+
+### Correlation by Value Range
+
+To check if correlations depend on the state (value) of the time series, use `get_ranges_df()`. This computes statistics of Minimum/Maximum/NS correlations binned by the value of the time series.
+
+```python
+sdc.get_ranges_df(
+    ts=1,
+    bin_size=.5,
+    min_lag=0,
+    max_lag=10,
+    alpha=0.05,
+    )
+
+```
+
+```text
+  cat_value direction  counts    n   freq  label
+(-0.6, 0.0]  Positive     504 1232 0.4091 40.9 %
+(-0.6, 0.0]  Negative       0 1232 0.0000  0.0 %
+(-0.6, 0.0]        NS     728 1232 0.5909 59.1 %
+ (0.0, 0.5]  Positive     218  883 0.2469 24.7 %
+ (0.0, 0.5]  Negative      10  883 0.0111  1.1 %
+ (0.0, 0.5]        NS     655  883 0.7418 74.2 %
+ (0.5, 1.0]  Positive       1   19 0.0526  5.3 %
+ (0.5, 1.0]  Negative       0   19 0.0000  0.0 %
+ (0.5, 1.0]        NS      18   19 0.9474 94.7 %
+ (1.0, 1.5]  Positive       0    0 0.0000  0.0 %
+```
 
 See [examples/basic_usage.py](examples/basic_usage.py) for a complete example with synthetic data showing transient correlations.
 
