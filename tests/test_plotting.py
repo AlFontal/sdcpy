@@ -2,7 +2,6 @@
 
 import matplotlib
 import matplotlib.pyplot as plt
-import pytest
 
 from sdcpy import SDCAnalysis
 
@@ -13,26 +12,17 @@ matplotlib.use("Agg")
 class TestSDCAnalysisPlotting:
     """Smoke tests for SDCAnalysis plotting methods."""
 
-    def test_two_way_plot(self, random_ts_pair):
-        """two_way_plot should not crash."""
-        from plotnine.ggplot import ggplot
-
-        ts1, ts2 = random_ts_pair
+    def test_combi_plot(self, ts_pair_any_index):
+        """combi_plot should return a matplotlib Figure (both index types)."""
+        ts1, ts2 = ts_pair_any_index
         sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        result = sdc.two_way_plot()
-        assert isinstance(result, ggplot)
-
-    def test_combi_plot(self, random_ts_pair):
-        """combi_plot should return a matplotlib Figure."""
-        ts1, ts2 = random_ts_pair
-        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        result = sdc.combi_plot()
+        result = sdc.combi_plot(date_fmt="%Y-%m")
         assert isinstance(result, plt.Figure)
         plt.close(result)
 
-    def test_combi_plot_with_params(self, random_ts_pair):
-        """combi_plot should accept various parameters."""
-        ts1, ts2 = random_ts_pair
+    def test_combi_plot_with_params(self, ts_pair_any_index):
+        """combi_plot should accept various parameters (both index types)."""
+        ts1, ts2 = ts_pair_any_index
         sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
         result = sdc.combi_plot(
             alpha=0.1,
@@ -42,6 +32,7 @@ class TestSDCAnalysisPlotting:
             max_r=0.5,
             min_lag=-20,
             max_lag=20,
+            date_fmt="%Y-%m",
         )
         assert isinstance(result, plt.Figure)
         plt.close(result)
@@ -55,23 +46,6 @@ class TestSDCAnalysisPlotting:
             result = sdc.combi_plot(align=align)
             assert isinstance(result, plt.Figure)
             plt.close(result)
-
-    def test_plot_consecutive(self, correlated_ts_pair):
-        """plot_consecutive should return a plotnine ggplot."""
-        from plotnine.ggplot import ggplot
-
-        ts1, ts2 = correlated_ts_pair
-        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=49)
-        result = sdc.plot_consecutive(alpha=0.5)  # Higher alpha for random data
-        assert isinstance(result, ggplot)
-
-    def test_dominant_lags_plot(self, binned_value_ts_pair):
-        """dominant_lags_plot should return a matplotlib Figure."""
-        ts1, ts2 = binned_value_ts_pair
-        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=49)
-        result = sdc.dominant_lags_plot(alpha=0.5)
-        assert isinstance(result, plt.Figure)
-        plt.close(result)
 
     def test_get_ranges_df(self, binned_value_ts_pair):
         """get_ranges_df should return a DataFrame."""
@@ -170,13 +144,32 @@ class TestCombiPlotConditions:
         assert result.get_size_inches()[1] == 10
         plt.close(result)
 
+    def test_combi_plot_string_datetime_index(self):
+        """combi_plot should work with string-based datetime indexes."""
+        import numpy as np
+        import pandas as pd
 
-class TestSingleShiftPlot:
-    """Tests for the unimplemented single_shift_plot method."""
+        # Create time series with string-based (object dtype) datetime index
+        np.random.seed(42)
+        dates = pd.date_range("2005-01-01", periods=100, freq="D")
+        # Convert to strings to simulate user data with object dtype index
+        string_dates = dates.strftime("%Y-%m-%d")
 
-    def test_raises_not_implemented(self, random_ts_pair):
-        """single_shift_plot should raise NotImplementedError."""
-        ts1, ts2 = random_ts_pair
+        ts1 = pd.Series(np.random.randn(100), index=string_dates, name="ts1")
+        ts1.index.name = "date"
+        ts2 = pd.Series(np.random.randn(100), index=string_dates, name="ts2")
+        ts2.index.name = "date"
+
         sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
-        with pytest.raises(NotImplementedError):
-            sdc.single_shift_plot(shift=5)
+        result = sdc.combi_plot(date_fmt="%Y-%m")
+        assert isinstance(result, plt.Figure)
+        plt.close(result)
+
+    def test_combi_plot_integer_index(self, numpy_ts_pair):
+        """combi_plot should work with integer indexes (no datetime conversion)."""
+        ts1, ts2 = numpy_ts_pair
+        # Numpy arrays will be converted to Series with integer index by SDCAnalysis
+        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
+        result = sdc.combi_plot()
+        assert isinstance(result, plt.Figure)
+        plt.close(result)

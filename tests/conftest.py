@@ -5,9 +5,16 @@ import pandas as pd
 import pytest
 
 
+def _convert_to_string_index(ts: pd.Series) -> pd.Series:
+    """Convert a Series with DatetimeIndex to one with string datetime index."""
+    result = ts.copy()
+    result.index = ts.index.strftime("%Y-%m-%d")
+    return result
+
+
 @pytest.fixture
 def random_ts_pair():
-    """Two random time series with daily frequency."""
+    """Two random time series with daily frequency (DatetimeIndex)."""
     np.random.seed(42)
     dates = pd.date_range("2020-01-01", periods=100, freq="D")
     ts1 = pd.Series(np.random.randn(100), index=dates, name="ts1")
@@ -15,6 +22,28 @@ def random_ts_pair():
     ts2 = pd.Series(np.random.randn(100), index=dates, name="ts2")
     ts2.index.name = "date_2"
     return ts1, ts2
+
+
+@pytest.fixture
+def string_datetime_ts_pair():
+    """Two random time series with string-based datetime index (object dtype)."""
+    np.random.seed(42)
+    dates = pd.date_range("2020-01-01", periods=100, freq="D")
+    string_dates = dates.strftime("%Y-%m-%d")
+    ts1 = pd.Series(np.random.randn(100), index=string_dates, name="ts1")
+    ts1.index.name = "date_1"
+    ts2 = pd.Series(np.random.randn(100), index=string_dates, name="ts2")
+    ts2.index.name = "date_2"
+    return ts1, ts2
+
+
+@pytest.fixture(params=["datetime", "string"])
+def ts_pair_any_index(request, random_ts_pair, string_datetime_ts_pair):
+    """Time series pair with either datetime or string index (parameterized)."""
+    if request.param == "datetime":
+        return random_ts_pair
+    else:
+        return string_datetime_ts_pair
 
 
 @pytest.fixture

@@ -31,5 +31,5 @@ if __name__ == "__main__":
 
     # Generate combination plot
     fig = sdc.combi_plot(xlabel="$TS_1$", ylabel="$TS_2$")
-    fig.savefig("sdc_example.png", dpi=300, bbox_inches="tight")
+    fig.savefig("sdc_example.png", bbox_inches="tight")
     print("Saved: sdc_example.png")
