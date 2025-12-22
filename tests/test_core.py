@@ -194,3 +194,81 @@ class TestComputeSDCStatisticalProperties:
         best_lag = mean_by_lag.idxmax()
         # The synthetic data has lag of 5, but we relaxed to ±10 due to noise
         assert abs(best_lag - 5) <= 10
+
+
+class TestMemoryManagement:
+    """Tests for memory-aware chunking functionality."""
+
+    def test_memory_estimation_returns_positive(self):
+        """Memory estimation should return a positive value."""
+        from sdcpy.core import _estimate_vectorized_memory
+
+        mem = _estimate_vectorized_memory(n1=100, n2=100, n_permutations=99)
+        assert mem > 0
+        assert isinstance(mem, float)
+
+    def test_memory_estimation_scales_with_size(self):
+        """Larger inputs should require more memory."""
+        from sdcpy.core import _estimate_vectorized_memory
+
+        small_mem = _estimate_vectorized_memory(n1=100, n2=100, n_permutations=99)
+        large_mem = _estimate_vectorized_memory(n1=1000, n2=1000, n_permutations=99)
+        assert large_mem > small_mem * 50  # Should scale with n^2
+
+    def test_memory_estimation_scales_with_permutations(self):
+        """More permutations should require more memory."""
+        from sdcpy.core import _estimate_vectorized_memory
+
+        few_perms = _estimate_vectorized_memory(n1=100, n2=100, n_permutations=9)
+        many_perms = _estimate_vectorized_memory(n1=100, n2=100, n_permutations=99)
+        assert many_perms > few_perms
+
+    def test_chunked_mode_triggers_with_tiny_memory_limit(self, numpy_ts_pair):
+        """Setting very low max_memory_gb should trigger chunked mode."""
+        ts1, ts2 = numpy_ts_pair
+
+        # This should trigger a warning about using chunked processing
+        with pytest.warns(UserWarning, match="Using chunked processing"):
+            result = compute_sdc(
+                ts1, ts2, fragment_size=10, n_permutations=9, max_memory_gb=0.0000001
+            )
+
+        # Should still produce valid results
+        assert len(result) > 0
+        assert result["r"].between(-1, 1).all()
+        assert result["p_value"].between(0, 1).all()
+
+    def test_chunked_and_full_produce_same_r_values(self, numpy_ts_pair):
+        """Chunked and full modes should produce identical correlation values.
+
+        Note: When permutations=False, both modes use the same code path for
+        correlation computation, so they produce identical results.
+        """
+        ts1, ts2 = numpy_ts_pair
+
+        # Use permutations=False since we're testing correlation values, not p-values
+        # Both should produce identical r values regardless of memory mode
+        result_full = compute_sdc(
+            ts1, ts2, fragment_size=10, n_permutations=9, permutations=False, max_memory_gb=100.0
+        )
+
+        result_chunked = compute_sdc(
+            ts1,
+            ts2,
+            fragment_size=10,
+            n_permutations=9,
+            permutations=False,
+            max_memory_gb=0.0000001,
+        )
+
+        # Correlation values should be identical (no permutations involved)
+        np.testing.assert_array_almost_equal(result_full["r"].values, result_chunked["r"].values)
+
+    def test_max_memory_gb_parameter_exists(self, numpy_ts_pair):
+        """max_memory_gb parameter should be accepted without error."""
+        ts1, ts2 = numpy_ts_pair
+        # Just verify the parameter is accepted
+        result = compute_sdc(
+            ts1, ts2, fragment_size=10, n_permutations=9, max_memory_gb=4.0, permutations=False
+        )
+        assert len(result) > 0

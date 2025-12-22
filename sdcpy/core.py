@@ -14,7 +14,51 @@ RECOGNIZED_METHODS = {
     "spearman": lambda x, y: stats.spearmanr(x, y),
 }
 
-CONSTANT_WARNING = {"pearson": stats.ConstantInputWarning, "spearman": stats.ConstantInputWarning}
+
+# Default maximum memory threshold (in GB) for full vectorized computation.
+# Above this, chunked processing is used automatically.
+DEFAULT_MAX_MEMORY_GB = 2.0
+
+
+def _estimate_vectorized_memory(
+    n1: int, n2: int, n_permutations: int, dtype: np.dtype = np.float64
+) -> float:
+    """
+    Estimate peak memory usage (in GB) for the fully vectorized SDC computation.
+
+    The dominant memory consumers are:
+    - Permuted correlation matrices: (n_root^2, n1, n2) where n_root = sqrt(n_permutations)
+    - Fragment matrices: (n1, fragment_size) + (n2, fragment_size)
+    - Correlation matrix: (n1, n2)
+    - Grid/lag matrices: 3 * (n1, n2)
+
+    Parameters
+    ----------
+    n1
+        Number of fragments from first time series
+    n2
+        Number of fragments from second time series
+    n_permutations
+        Number of permutations for the randomization test
+    dtype
+        Data type (default float64 = 8 bytes)
+
+    Returns
+    -------
+    float
+        Estimated peak memory usage in gigabytes
+    """
+    bytes_per_element = np.dtype(dtype).itemsize
+    n_root = int(np.sqrt(n_permutations).round())
+    n_actual_perms = n_root * n_root
+
+    # Main memory consumers
+    perm_matrices = n_actual_perms * n1 * n2 * bytes_per_element
+    corr_matrix = n1 * n2 * bytes_per_element
+    grid_matrices = 3 * n1 * n2 * bytes_per_element  # start_1_grid, start_2_grid, lag_matrix
+
+    total_bytes = perm_matrices + corr_matrix + grid_matrices
+    return total_bytes / (1024**3)  # Convert to GB
 
 
 def generate_correlation_map(x: np.ndarray, y: np.ndarray, method: str = "pearson") -> np.ndarray:
@@ -94,6 +138,7 @@ def compute_sdc(
     permutations: bool = True,
     min_lag: int = -np.inf,
     max_lag: int = np.inf,
+    max_memory_gb: float = DEFAULT_MAX_MEMORY_GB,
 ) -> pd.DataFrame:
     """
     Computes scale dependent correlation (https://doi.org/10.1007/s00382-005-0106-4) matrix among two time series
@@ -124,6 +169,10 @@ def compute_sdc(
         Lower limit of the lags between ts1 and ts2 that will be computed.
     max_lag
         Upper limit of the lags between ts1 and ts2 that will be computed.
+    max_memory_gb
+        Maximum memory (in GB) to use for full vectorized computation. If estimated memory exceeds
+        this limit, the computation falls back to chunked processing which uses constant memory but
+        may be slightly slower. Default is 2.0 GB.
 
     Returns
     -------
@@ -147,6 +196,7 @@ def compute_sdc(
             permutations,
             min_lag,
             max_lag,
+            max_memory_gb,
         )
     else:
         # Fall back to original loop-based implementation for custom callables
@@ -173,8 +223,16 @@ def _compute_sdc_vectorized(
     permutations: bool,
     min_lag: int,
     max_lag: int,
+    max_memory_gb: float = DEFAULT_MAX_MEMORY_GB,
 ) -> pd.DataFrame:
-    """Vectorized implementation for built-in correlation methods."""
+    """Vectorized implementation for built-in correlation methods.
+
+    Parameters
+    ----------
+    max_memory_gb
+        Maximum memory (in GB) to use for full vectorization. If estimated
+        memory exceeds this, chunked processing is used automatically.
+    """
     n1 = len(ts1) - fragment_size
     n2 = len(ts2) - fragment_size
 
@@ -210,44 +268,86 @@ def _compute_sdc_vectorized(
         n_root = int(np.sqrt(n_permutations).round())
         n_actual_perms = n_root * n_root
 
-        # OPTIMIZED: Pre-shuffle all fragments and compute full permuted correlation matrices
-        # This is much faster than shuffling per-pair because we compute n_root^2 full
-        # correlation matrices instead of n_valid individual permutation tests
+        # Estimate memory and decide strategy
+        estimated_memory = _estimate_vectorized_memory(n1, n2, n_permutations)
+        use_chunked = estimated_memory > max_memory_gb
 
-        # Pre-compute shuffled versions of all fragments
-        # Shape: (n_root, n_fragments, fragment_size)
-        shuffled_frags1 = np.array(
-            [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
-        )
-        shuffled_frags2 = np.array(
-            [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
-        )
+        if use_chunked:
+            warnings.warn(
+                f"Estimated memory ({estimated_memory:.2f} GB) exceeds limit "
+                f"({max_memory_gb:.2f} GB). Using chunked processing.",
+                UserWarning,
+                stacklevel=3,
+            )
+            # Chunked approach: accumulate counts without storing all permutation matrices
+            counts = np.zeros((n1, n2), dtype=np.int32)
 
-        # Compute permuted correlation matrices for all combinations of shuffled fragments
-        # Shape: (n_root, n_root, n1, n2)
-        perm_corr_matrices = np.zeros((n_root, n_root, n1, n2))
-        for i in tqdm(range(n_root), desc="Computing permutations", leave=False):
-            for j in range(n_root):
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    perm_corr_matrices[i, j] = generate_correlation_map(
-                        shuffled_frags1[i], shuffled_frags2[j], method=method
-                    )
+            # Pre-compute shuffled versions of all fragments
+            shuffled_frags1 = np.array(
+                [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
+            )
+            shuffled_frags2 = np.array(
+                [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
+            )
 
-        # Reshape to (n_actual_perms, n1, n2)
-        perm_corrs_flat = perm_corr_matrices.reshape(n_actual_perms, n1, n2)
+            # Process one permutation pair at a time, accumulating counts
+            abs_observed = np.abs(corr_matrix) if two_tailed else None
+            with tqdm(
+                total=n_actual_perms, desc="Computing permutations (chunked)", leave=False
+            ) as pbar:
+                for i in range(n_root):
+                    for j in range(n_root):
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            perm_corr = generate_correlation_map(
+                                shuffled_frags1[i], shuffled_frags2[j], method=method
+                            )
+                        if two_tailed:
+                            counts += (np.abs(perm_corr) >= abs_observed).astype(np.int32)
+                        else:
+                            counts += (perm_corr >= corr_matrix).astype(np.int32)
+                    pbar.update(n_root)
 
-        # Compute p-values vectorized
-        if two_tailed:
-            # Count how many abs(perm) >= abs(observed) for each position
-            abs_observed = np.abs(corr_matrix)
-            abs_perms = np.abs(perm_corrs_flat)
-            counts = (abs_perms >= abs_observed[np.newaxis, :, :]).sum(axis=0)
+            # P-value: (count + 1) / (n_perms + 1) for proper permutation test
+            p_value_matrix = (counts + 1) / (n_actual_perms + 1)
         else:
-            counts = (perm_corrs_flat >= corr_matrix[np.newaxis, :, :]).sum(axis=0)
+            # Full vectorized approach: store all permutation matrices
+            # Pre-compute shuffled versions of all fragments
+            # Shape: (n_root, n_fragments, fragment_size)
+            shuffled_frags1 = np.array(
+                [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
+            )
+            shuffled_frags2 = np.array(
+                [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
+            )
 
-        # P-value: (count + 1) / (n_perms + 1) for proper permutation test
-        p_value_matrix = (counts + 1) / (n_actual_perms + 1)
+            # Compute permuted correlation matrices for all combinations of shuffled fragments
+            # Shape: (n_root, n_root, n1, n2)
+            perm_corr_matrices = np.zeros((n_root, n_root, n1, n2))
+            with tqdm(total=n_actual_perms, desc="Computing permutations", leave=False) as pbar:
+                for i in range(n_root):
+                    for j in range(n_root):
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            perm_corr_matrices[i, j] = generate_correlation_map(
+                                shuffled_frags1[i], shuffled_frags2[j], method=method
+                            )
+                    pbar.update(n_root)
+
+            # Reshape to (n_actual_perms, n1, n2)
+            perm_corrs_flat = perm_corr_matrices.reshape(n_actual_perms, n1, n2)
+
+            # Compute p-values vectorized
+            if two_tailed:
+                # Count how many abs(perm) >= abs(observed) for each position
+                abs_observed = np.abs(corr_matrix)
+                abs_perms = np.abs(perm_corrs_flat)
+                counts = (abs_perms >= abs_observed[np.newaxis, :, :]).sum(axis=0)
+            else:
+                counts = (perm_corrs_flat >= corr_matrix[np.newaxis, :, :]).sum(axis=0)
+
+            # P-value: (count + 1) / (n_perms + 1) for proper permutation test
+            p_value_matrix = (counts + 1) / (n_actual_perms + 1)
 
         # Extract p-values for valid entries
         p_values = p_value_matrix[valid_mask]
@@ -291,7 +391,7 @@ def _compute_sdc_loop(
     """Original loop-based implementation for custom callable methods."""
     method_fun = method
     n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
-    int(np.sqrt(n_permutations).round())
+
     sdc_array = np.empty(shape=(n_iterations, 7))
     sdc_array[:] = np.nan
     i = 0
