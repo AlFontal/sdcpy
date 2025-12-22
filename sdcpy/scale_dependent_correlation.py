@@ -102,10 +102,10 @@ class SDCAnalysis:
 
     def get_ranges_df(
         self,
-        bin_size: int | float = 1,
+        bin_size: Union[int, float] = 1,
         alpha: float = 0.05,
-        min_bin: int | float | None = None,
-        max_bin: int | float | None = None,
+        min_bin: Optional[Union[int, float]] = None,
+        max_bin: Optional[Union[int, float]] = None,
         ts: int = 1,
         agg_func: str = "mean",
         min_lag: int = -np.inf,
@@ -120,13 +120,13 @@ class SDCAnalysis:
 
         Parameters
         ----------
-        bin_size : int | float, default=1
+        bin_size : Union[int, float], default=1
             Width of each value bin.
         alpha : float, default=0.05
             Significance level for classifying correlations.
-        min_bin : int | float, optional
+        min_bin : Optional[Union[int, float]], optional
             Lower bound for binning. Defaults to floor(min(ts)) aligned to bin_size.
-        max_bin : int | float, optional
+        max_bin : Optional[Union[int, float]], optional
             Upper bound for binning. Defaults to ceil(max(ts)) aligned to bin_size.
         ts : int, default=1
             Which time series to analyze (1 for ts1, 2 for ts2).
