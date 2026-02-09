@@ -25,6 +25,8 @@ class TestSDCAnalysisBasic:
         # Should have created integer indices
         assert 0 in sdc.ts1.index
         assert pd.api.types.is_integer_dtype(sdc.ts1.index)
+        assert len(sdc.ts1) == len(ts1)
+        assert len(sdc.ts2) == len(ts2)
         assert len(sdc.sdc_df) > 0
 
     def test_one_way_sdc(self, random_ts_pair):
@@ -43,7 +45,7 @@ class TestSDCAnalysisEdgeCases:
         """Should work with very short time series."""
         ts1, ts2 = short_ts_pair
         sdc = SDCAnalysis(ts1, ts2, fragment_size=5, n_permutations=9)
-        expected = (len(ts1) - 5) * (len(ts2) - 5)
+        expected = (len(ts1) - 5 + 1) * (len(ts2) - 5 + 1)
         assert len(sdc.sdc_df) == expected
 
     def test_weekly_frequency(self, weekly_ts_pair):
@@ -154,7 +156,7 @@ class TestSDCAnalysisFragmentSizes:
         """Should work with various fragment sizes."""
         ts1, ts2 = random_ts_pair
         sdc = SDCAnalysis(ts1, ts2, fragment_size=fragment_size, n_permutations=9)
-        expected = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
+        expected = (len(ts1) - fragment_size + 1) * (len(ts2) - fragment_size + 1)
         assert len(sdc.sdc_df) == expected
 
     def test_fragment_size_equals_length_minus_one(self, random_ts_pair):
@@ -166,4 +168,4 @@ class TestSDCAnalysisFragmentSizes:
         fragment_size = len(ts1_short) - 2
         sdc = SDCAnalysis(ts1_short, ts2_short, fragment_size=fragment_size, n_permutations=9)
         # Should have very few comparisons
-        assert len(sdc.sdc_df) == 4  # (20-18)^2 = 2^2 = 4
+        assert len(sdc.sdc_df) == 9  # (20-18+1)^2 = 3^2 = 9

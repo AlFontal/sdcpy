@@ -46,8 +46,10 @@ class SDCAnalysis:
             ts2 = pd.Series(ts2)
         min_date = max(ts1.index.min(), ts2.index.min())
         max_date = min(ts1.index.max(), ts2.index.max())
-        self.ts1 = ts1[min_date:max_date]
-        self.ts2 = ts2[min_date:max_date]
+        self.ts1 = ts1.loc[min_date:max_date]
+        self.ts2 = ts2.loc[min_date:max_date]
+        if self.ts1.empty or self.ts2.empty:
+            raise ValueError("ts1 and ts2 must have overlapping index values.")
         self.fragment_size = fragment_size
         self.n_permutations = n_permutations
         self.ts1.index.name = "date_1"
@@ -86,6 +88,7 @@ class SDCAnalysis:
             self.n_permutations,
             self.method,
             filename,
+            self.way,
         )
 
     @classmethod
@@ -93,7 +96,7 @@ class SDCAnalysis:
         data = load_from_excel(filename)
         return cls(
             ts1=data["ts1"],
-            ts2=data["ts2"],
+            ts2=None if data.get("way", "two-way") == "one-way" else data["ts2"],
             fragment_size=data["fragment_size"],
             n_permutations=data["n_permutations"],
             method=data["method"],
@@ -151,24 +154,34 @@ class SDCAnalysis:
         """
         ts_series = self.ts1 if ts == 1 else self.ts2
 
-        # Compute rolling aggregate for fragments
-        # This gives the aggregate value for each fragment starting at each index
+        # Compute per-fragment aggregates by fragment start position.
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        n_fragments = len(ts_series) - self.fragment_size + 1
+        if n_fragments < 1:
+            raise ValueError("fragment_size cannot be larger than the selected time series length.")
+        fragment_windows = sliding_window_view(ts_series.to_numpy(), self.fragment_size)[:n_fragments]
+
         if agg_func == "mean":
-            fragment_values = ts_series.rolling(window=self.fragment_size, min_periods=1).mean()
+            agg_values = fragment_windows.mean(axis=1)
         elif agg_func == "median":
-            fragment_values = ts_series.rolling(window=self.fragment_size, min_periods=1).median()
+            agg_values = np.median(fragment_windows, axis=1)
         elif agg_func == "min":
-            fragment_values = ts_series.rolling(window=self.fragment_size, min_periods=1).min()
+            agg_values = fragment_windows.min(axis=1)
         elif agg_func == "max":
-            fragment_values = ts_series.rolling(window=self.fragment_size, min_periods=1).max()
+            agg_values = fragment_windows.max(axis=1)
         else:
             raise ValueError(
                 f"Unknown agg_func: {agg_func}. Use 'mean', 'median', 'min', or 'max'."
             )
 
         # Create lookup from date to fragment aggregate value
-        fragment_values_df = fragment_values.reset_index()
-        fragment_values_df.columns = [f"date_{ts}", "fragment_value"]
+        fragment_values_df = pd.DataFrame(
+            {
+                f"date_{ts}": ts_series.index[:n_fragments],
+                "fragment_value": agg_values,
+            }
+        )
 
         # Join sdc_df with fragment values first
         df = (

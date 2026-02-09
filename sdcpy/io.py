@@ -18,6 +18,7 @@ def save_to_excel(
     n_permutations: int,
     method: str,
     filename: str,
+    way: str = "two-way",
 ) -> None:
     """Save SDC analysis results to Excel file."""
     with pd.ExcelWriter(filename) as writer:
@@ -45,6 +46,7 @@ def save_to_excel(
                 "fragment_size": fragment_size,
                 "n_permutations": n_permutations,
                 "method": method,
+                "way": way,
             },
             index=[1],
         ).to_excel(writer, sheet_name="config", index=False)
@@ -56,7 +58,11 @@ def load_from_excel(filename: str) -> dict:
 
     Returns a dict with keys: ts1, ts2, fragment_size, n_permutations, method, sdc_df
     """
-    fragment_size, n_permutations, method = pd.read_excel(filename, "config").loc[0]
+    config = pd.read_excel(filename, "config").iloc[0].to_dict()
+    fragment_size = int(config["fragment_size"])
+    n_permutations = int(config["n_permutations"])
+    method = config["method"]
+    way = config.get("way", "two-way")
     ts1 = pd.read_excel(filename, "time_series").set_index("date_1")[["start_1", "ts1"]]
     ts2 = pd.read_excel(filename, "time_series").set_index("date_2")[["start_2", "ts2"]]
     sdc_df = (
@@ -67,6 +73,7 @@ def load_from_excel(filename: str) -> dict:
             ),
             on=["start_1", "start_2"],
         )
+        .dropna(subset=["r", "p_value"])
         .assign(
             stop_1=lambda dd: dd.start_1 + fragment_size,
             stop_2=lambda dd: dd.start_2 + fragment_size,
@@ -82,5 +89,6 @@ def load_from_excel(filename: str) -> dict:
         "fragment_size": fragment_size,
         "n_permutations": n_permutations,
         "method": method,
+        "way": way,
         "sdc_df": sdc_df,
     }

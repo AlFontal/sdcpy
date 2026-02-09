@@ -252,8 +252,12 @@ def combi_plot(
         metric_labels = {
             "pearson": "Pearson's $r$",
             "spearman": "Spearman's $\\rho$",
+            "kendall": "Kendall's $\\tau$",
         }
-        metric_label = metric_labels.get(method, method.capitalize())
+        if isinstance(method, str):
+            metric_label = metric_labels.get(method.lower(), method.capitalize())
+        else:
+            metric_label = getattr(method, "__name__", method.__class__.__name__)
 
     # Validate alignment
     align = align.lower()
@@ -334,12 +338,24 @@ def combi_plot(
     filtered_df = sdc_df.loc[lambda dd: (dd.lag <= max_lag) & (dd.lag >= min_lag)]
     pivot_r = filtered_df.pivot(index="date_2", columns="date_1", values="r")
     pivot_p = filtered_df.pivot(index="date_2", columns="date_1", values="p_value")
-    mask = pivot_p >= alpha
+    if pivot_r.empty:
+        pivot_r = pd.DataFrame([[0.0]])
+        mask = np.zeros((1, 1), dtype=bool)
+    else:
+        mask = (pivot_p >= alpha) | pivot_r.isna() | pivot_p.isna()
+    # seaborn emits runtime warnings when the full heatmap is masked (all non-significant).
+    # In that case, render a neutral heatmap without masking so plotting remains warning-free.
+    if np.asarray(mask).all():
+        heatmap_data = pivot_r.fillna(0.0)
+        heatmap_mask = np.zeros_like(np.asarray(mask), dtype=bool)
+    else:
+        heatmap_data = pivot_r
+        heatmap_mask = mask
 
     sns.heatmap(
-        pivot_r,
+        heatmap_data,
         cbar=False,
-        mask=mask,
+        mask=heatmap_mask,
         cmap="RdBu_r",
         ax=hm,
     )

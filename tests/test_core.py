@@ -97,7 +97,7 @@ class TestComputeSDC:
         result = compute_sdc(
             ts1, ts2, fragment_size=fragment_size, n_permutations=9, permutations=True
         )
-        expected_rows = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
+        expected_rows = (len(ts1) - fragment_size + 1) * (len(ts2) - fragment_size + 1)
         assert len(result) == expected_rows
 
     def test_output_columns(self, numpy_ts_pair):
@@ -159,8 +159,44 @@ class TestComputeSDC:
         ts1, ts2 = numpy_ts_pair
         fragment_size = len(ts1) - 5
         result = compute_sdc(ts1, ts2, fragment_size=fragment_size, n_permutations=9)
-        expected_rows = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
+        expected_rows = (len(ts1) - fragment_size + 1) * (len(ts2) - fragment_size + 1)
         assert len(result) == expected_rows
+
+    def test_fragment_size_equal_series_length(self):
+        """fragment_size equal to series length should produce one comparison."""
+        ts = np.arange(10)
+        result = compute_sdc(ts, ts, fragment_size=10, n_permutations=9, permutations=False)
+        assert len(result) == 1
+        assert result.iloc[0]["start_1"] == 0
+        assert result.iloc[0]["stop_1"] == 10
+
+    def test_fragment_size_larger_than_series_raises(self):
+        """fragment_size larger than series length should raise ValueError."""
+        ts = np.arange(10)
+        with pytest.raises(ValueError, match="fragment_size cannot be larger"):
+            compute_sdc(ts, ts, fragment_size=11, n_permutations=9)
+
+    def test_kendall_method_string(self, numpy_ts_pair):
+        """kendall should work when requested by name."""
+        ts1, ts2 = numpy_ts_pair
+        result = compute_sdc(ts1, ts2, fragment_size=10, n_permutations=9, method="kendall")
+        assert len(result) > 0
+        assert result["p_value"].between(0, 1).all()
+
+    def test_unknown_method_raises(self, numpy_ts_pair):
+        """Unknown method names should fail clearly."""
+        ts1, ts2 = numpy_ts_pair
+        with pytest.raises(ValueError, match="Unknown method"):
+            compute_sdc(ts1, ts2, fragment_size=10, n_permutations=9, method="not-a-method")
+
+    def test_non_square_permutations_use_requested_count(self):
+        """Permutation p-value resolution should match requested count."""
+        np.random.seed(42)
+        ts = np.random.randn(30)
+        n_permutations = 10
+        result = compute_sdc(ts, ts, fragment_size=6, n_permutations=n_permutations)
+        scaled = result["p_value"] * (n_permutations + 1)
+        assert np.allclose(scaled, np.round(scaled), atol=1e-10)
 
 
 class TestComputeSDCStatisticalProperties:

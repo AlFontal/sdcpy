@@ -1,7 +1,10 @@
 """Smoke tests for plotting functions."""
 
+import warnings
+
 import matplotlib
 import matplotlib.pyplot as plt
+from scipy import stats
 
 from sdcpy import SDCAnalysis
 
@@ -134,6 +137,20 @@ class TestCombiPlotConditions:
         assert isinstance(result, plt.Figure)
         plt.close(result)
 
+    def test_combi_plot_custom_callable_method(self, random_ts_pair):
+        """combi_plot should work when method is a callable."""
+        ts1, ts2 = random_ts_pair
+        sdc = SDCAnalysis(
+            ts1,
+            ts2,
+            fragment_size=10,
+            n_permutations=9,
+            method=lambda x, y: stats.kendalltau(x, y),
+        )
+        result = sdc.combi_plot()
+        assert isinstance(result, plt.Figure)
+        plt.close(result)
+
     def test_combi_plot_figsize(self, random_ts_pair):
         """combi_plot should accept figsize parameter."""
         ts1, ts2 = random_ts_pair
@@ -173,3 +190,14 @@ class TestCombiPlotConditions:
         result = sdc.combi_plot()
         assert isinstance(result, plt.Figure)
         plt.close(result)
+
+    def test_combi_plot_all_masked_heatmap_no_runtime_warning(self, random_ts_pair):
+        """All-masked heatmaps should not emit seaborn all-NaN runtime warnings."""
+        ts1, ts2 = random_ts_pair
+        sdc = SDCAnalysis(ts1, ts2, fragment_size=10, n_permutations=9)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            result = sdc.combi_plot(alpha=0.0)
+        assert isinstance(result, plt.Figure)
+        plt.close(result)
+        assert not any("All-NaN slice encountered" in str(w.message) for w in caught)

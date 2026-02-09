@@ -12,7 +12,10 @@ from tqdm.auto import tqdm
 RECOGNIZED_METHODS = {
     "pearson": lambda x, y: stats.pearsonr(x, y),
     "spearman": lambda x, y: stats.spearmanr(x, y),
+    "kendall": lambda x, y: stats.kendalltau(x, y),
 }
+
+VECTORIZED_METHODS = {"pearson", "spearman"}
 
 
 # Default maximum memory threshold (in GB) for full vectorized computation.
@@ -27,7 +30,7 @@ def _estimate_vectorized_memory(
     Estimate peak memory usage (in GB) for the fully vectorized SDC computation.
 
     The dominant memory consumers are:
-    - Permuted correlation matrices: (n_root^2, n1, n2) where n_root = sqrt(n_permutations)
+    - Permuted correlation matrices: (n_permutations, n1, n2)
     - Fragment matrices: (n1, fragment_size) + (n2, fragment_size)
     - Correlation matrix: (n1, n2)
     - Grid/lag matrices: 3 * (n1, n2)
@@ -49,11 +52,8 @@ def _estimate_vectorized_memory(
         Estimated peak memory usage in gigabytes
     """
     bytes_per_element = np.dtype(dtype).itemsize
-    n_root = int(np.sqrt(n_permutations).round())
-    n_actual_perms = n_root * n_root
-
     # Main memory consumers
-    perm_matrices = n_actual_perms * n1 * n2 * bytes_per_element
+    perm_matrices = n_permutations * n1 * n2 * bytes_per_element
     corr_matrix = n1 * n2 * bytes_per_element
     grid_matrices = 3 * n1 * n2 * bytes_per_element  # start_1_grid, start_2_grid, lag_matrix
 
@@ -97,7 +97,8 @@ def generate_correlation_map(x: np.ndarray, y: np.ndarray, method: str = "pearso
     s_x = x.std(axis=1, ddof=n - 1)
     s_y = y.std(axis=1, ddof=n - 1)
     cov = np.dot(x, y.T) - n * np.dot(mu_x[:, np.newaxis], mu_y[np.newaxis, :])
-    return cov / np.dot(s_x[:, np.newaxis], s_y[np.newaxis, :])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return cov / np.dot(s_x[:, np.newaxis], s_y[np.newaxis, :])
 
 
 def shuffle_along_axis(a: np.ndarray, axis: int) -> np.ndarray:
@@ -121,11 +122,24 @@ def shuffle_along_axis(a: np.ndarray, axis: int) -> np.ndarray:
 
 def _build_fragment_matrix(ts: np.ndarray, fragment_size: int) -> np.ndarray:
     """Build a matrix where each row is a sliding window fragment of the time series."""
-    n_fragments = len(ts) - fragment_size
+    n_fragments = len(ts) - fragment_size + 1
     # Use stride tricks for efficient view-based slicing
     from numpy.lib.stride_tricks import sliding_window_view
 
     return sliding_window_view(ts, fragment_size)[:n_fragments]
+
+
+def _extract_statistic_and_pvalue(result: object) -> tuple[float, float]:
+    """Extract (statistic, p-value) from method outputs."""
+    if hasattr(result, "statistic") and hasattr(result, "pvalue"):
+        return float(result.statistic), float(result.pvalue)
+    if isinstance(result, tuple):
+        if not result:
+            raise ValueError("Correlation method returned an empty tuple.")
+        statistic = float(result[0])
+        p_value = np.nan if len(result) < 2 else float(result[1])
+        return statistic, p_value
+    return float(result), np.nan
 
 
 def compute_sdc(
@@ -184,33 +198,52 @@ def compute_sdc(
     ts1_arr = np.asarray(ts1)
     ts2_arr = np.asarray(ts2)
 
-    # Use vectorized path for built-in methods
-    if method in RECOGNIZED_METHODS:
-        return _compute_sdc_vectorized(
-            ts1_arr,
-            ts2_arr,
-            fragment_size,
-            n_permutations,
-            method,
-            two_tailed,
-            permutations,
-            min_lag,
-            max_lag,
-            max_memory_gb,
-        )
+    if ts1_arr.ndim != 1 or ts2_arr.ndim != 1:
+        raise ValueError("ts1 and ts2 must be one-dimensional array-like objects.")
+    if fragment_size < 1:
+        raise ValueError("fragment_size must be >= 1.")
+    if fragment_size > len(ts1_arr) or fragment_size > len(ts2_arr):
+        raise ValueError("fragment_size cannot be larger than the length of either time series.")
+    if permutations and n_permutations < 1:
+        raise ValueError("n_permutations must be >= 1 when permutations=True.")
+
+    if isinstance(method, str):
+        method_key = method.lower()
+        if method_key in VECTORIZED_METHODS:
+            return _compute_sdc_vectorized(
+                ts1_arr,
+                ts2_arr,
+                fragment_size,
+                n_permutations,
+                method_key,
+                two_tailed,
+                permutations,
+                min_lag,
+                max_lag,
+                max_memory_gb,
+            )
+        if method_key in RECOGNIZED_METHODS:
+            method_fun = RECOGNIZED_METHODS[method_key]
+        else:
+            recognized = ", ".join(sorted(RECOGNIZED_METHODS))
+            raise ValueError(f"Unknown method '{method}'. Supported methods: {recognized}, or a callable.")
+    elif callable(method):
+        method_fun = method
     else:
-        # Fall back to original loop-based implementation for custom callables
-        return _compute_sdc_loop(
-            ts1_arr,
-            ts2_arr,
-            fragment_size,
-            n_permutations,
-            method,
-            two_tailed,
-            permutations,
-            min_lag,
-            max_lag,
-        )
+        raise TypeError("method must be a string identifier or a callable.")
+
+    # Fall back to loop-based implementation for methods that are not vectorized
+    return _compute_sdc_loop(
+        ts1_arr,
+        ts2_arr,
+        fragment_size,
+        n_permutations,
+        method_fun,
+        two_tailed,
+        permutations,
+        min_lag,
+        max_lag,
+    )
 
 
 def _compute_sdc_vectorized(
@@ -233,8 +266,8 @@ def _compute_sdc_vectorized(
         Maximum memory (in GB) to use for full vectorization. If estimated
         memory exceeds this, chunked processing is used automatically.
     """
-    n1 = len(ts1) - fragment_size
-    n2 = len(ts2) - fragment_size
+    n1 = len(ts1) - fragment_size + 1
+    n2 = len(ts2) - fragment_size + 1
 
     # Build fragment matrices using sliding window
     frags1 = _build_fragment_matrix(ts1, fragment_size)  # (n1, fragment_size)
@@ -265,8 +298,7 @@ def _compute_sdc_vectorized(
 
     # Compute p-values
     if permutations:
-        n_root = int(np.sqrt(n_permutations).round())
-        n_actual_perms = n_root * n_root
+        n_root = int(np.ceil(np.sqrt(n_permutations)))
 
         # Estimate memory and decide strategy
         estimated_memory = _estimate_vectorized_memory(n1, n2, n_permutations)
@@ -281,22 +313,23 @@ def _compute_sdc_vectorized(
             )
             # Chunked approach: accumulate counts without storing all permutation matrices
             counts = np.zeros((n1, n2), dtype=np.int32)
-
-            # Pre-compute shuffled versions of all fragments
+            abs_observed = np.abs(corr_matrix) if two_tailed else None
             shuffled_frags1 = np.array(
                 [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
             )
             shuffled_frags2 = np.array(
                 [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
             )
-
-            # Process one permutation pair at a time, accumulating counts
-            abs_observed = np.abs(corr_matrix) if two_tailed else None
             with tqdm(
-                total=n_actual_perms, desc="Computing permutations (chunked)", leave=False
+                total=n_permutations, desc="Computing permutations (chunked)", leave=False
             ) as pbar:
+                n_done = 0
                 for i in range(n_root):
+                    if n_done >= n_permutations:
+                        break
                     for j in range(n_root):
+                        if n_done >= n_permutations:
+                            break
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
                             perm_corr = generate_correlation_map(
@@ -306,48 +339,48 @@ def _compute_sdc_vectorized(
                             counts += (np.abs(perm_corr) >= abs_observed).astype(np.int32)
                         else:
                             counts += (perm_corr >= corr_matrix).astype(np.int32)
-                    pbar.update(n_root)
+                        pbar.update(1)
+                        n_done += 1
 
             # P-value: (count + 1) / (n_perms + 1) for proper permutation test
-            p_value_matrix = (counts + 1) / (n_actual_perms + 1)
+            p_value_matrix = (counts + 1) / (n_permutations + 1)
         else:
             # Full vectorized approach: store all permutation matrices
-            # Pre-compute shuffled versions of all fragments
-            # Shape: (n_root, n_fragments, fragment_size)
+            # Shape: (n_permutations, n1, n2)
+            perm_corr_matrices = np.zeros((n_permutations, n1, n2))
             shuffled_frags1 = np.array(
                 [shuffle_along_axis(frags1.copy(), axis=1) for _ in range(n_root)]
             )
             shuffled_frags2 = np.array(
                 [shuffle_along_axis(frags2.copy(), axis=1) for _ in range(n_root)]
             )
-
-            # Compute permuted correlation matrices for all combinations of shuffled fragments
-            # Shape: (n_root, n_root, n1, n2)
-            perm_corr_matrices = np.zeros((n_root, n_root, n1, n2))
-            with tqdm(total=n_actual_perms, desc="Computing permutations", leave=False) as pbar:
+            with tqdm(total=n_permutations, desc="Computing permutations", leave=False) as pbar:
+                k = 0
                 for i in range(n_root):
+                    if k >= n_permutations:
+                        break
                     for j in range(n_root):
+                        if k >= n_permutations:
+                            break
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
-                            perm_corr_matrices[i, j] = generate_correlation_map(
+                            perm_corr_matrices[k] = generate_correlation_map(
                                 shuffled_frags1[i], shuffled_frags2[j], method=method
                             )
-                    pbar.update(n_root)
-
-            # Reshape to (n_actual_perms, n1, n2)
-            perm_corrs_flat = perm_corr_matrices.reshape(n_actual_perms, n1, n2)
+                        pbar.update(1)
+                        k += 1
 
             # Compute p-values vectorized
             if two_tailed:
                 # Count how many abs(perm) >= abs(observed) for each position
                 abs_observed = np.abs(corr_matrix)
-                abs_perms = np.abs(perm_corrs_flat)
+                abs_perms = np.abs(perm_corr_matrices)
                 counts = (abs_perms >= abs_observed[np.newaxis, :, :]).sum(axis=0)
             else:
-                counts = (perm_corrs_flat >= corr_matrix[np.newaxis, :, :]).sum(axis=0)
+                counts = (perm_corr_matrices >= corr_matrix[np.newaxis, :, :]).sum(axis=0)
 
             # P-value: (count + 1) / (n_perms + 1) for proper permutation test
-            p_value_matrix = (counts + 1) / (n_actual_perms + 1)
+            p_value_matrix = (counts + 1) / (n_permutations + 1)
 
         # Extract p-values for valid entries
         p_values = p_value_matrix[valid_mask]
@@ -390,16 +423,16 @@ def _compute_sdc_loop(
 ) -> pd.DataFrame:
     """Original loop-based implementation for custom callable methods."""
     method_fun = method
-    n_iterations = (len(ts1) - fragment_size) * (len(ts2) - fragment_size)
+    n_iterations = (len(ts1) - fragment_size + 1) * (len(ts2) - fragment_size + 1)
 
     sdc_array = np.empty(shape=(n_iterations, 7))
     sdc_array[:] = np.nan
     i = 0
     progress_bar = tqdm(total=n_iterations, desc="Computing SDC", leave=False)
 
-    for start_1 in range(len(ts1) - fragment_size):
+    for start_1 in range(len(ts1) - fragment_size + 1):
         stop_1 = start_1 + fragment_size
-        for start_2 in range(len(ts2) - fragment_size):
+        for start_2 in range(len(ts2) - fragment_size + 1):
             lag = start_1 - start_2
             if min_lag <= lag <= max_lag:
                 stop_2 = start_2 + fragment_size
@@ -408,27 +441,24 @@ def _compute_sdc_loop(
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    statistic, p_value = method_fun(fragment_1, fragment_2)
+                    statistic, p_value = _extract_statistic_and_pvalue(method_fun(fragment_1, fragment_2))
 
                 if permutations:
-                    permuted_scores = [
-                        method_fun(
+                    permuted_scores = np.empty(n_permutations, dtype=float)
+                    for k in range(n_permutations):
+                        perm_result = method_fun(
                             np.random.permutation(fragment_1), np.random.permutation(fragment_2)
-                        )[0]
-                        for _ in range(n_permutations)
-                    ]
-                    if two_tailed:
-                        p_value = (
-                            1
-                            - stats.percentileofscore(np.abs(permuted_scores), np.abs(statistic))
-                            / 100
                         )
+                        permuted_scores[k], _ = _extract_statistic_and_pvalue(perm_result)
+                    if two_tailed:
+                        count = np.sum(np.abs(permuted_scores) >= np.abs(statistic))
                     else:
-                        p_value = 1 - stats.percentileofscore(permuted_scores, statistic) / 100
+                        count = np.sum(permuted_scores >= statistic)
+                    p_value = (count + 1) / (n_permutations + 1)
 
                 sdc_array[i] = [start_1, stop_1, start_2, stop_2, lag, statistic, p_value]
                 i += 1
-                progress_bar.update(1)
+            progress_bar.update(1)
 
     progress_bar.close()
     sdc_df = pd.DataFrame(
