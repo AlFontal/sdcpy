@@ -132,7 +132,7 @@ sdc.get_ranges_df(
  (1.0, 1.5]  Positive       0    0 0.0000  0.0 %
 ```
 
-See [examples/basic_usage.py](examples/basic_usage.py) for a complete example with synthetic data showing transient correlations.
+See [examples/basic_usage.py](https://github.com/AlFontal/sdcpy/blob/master/examples/basic_usage.py) for a complete example with synthetic data showing transient correlations.
 
 ## Development
 
@@ -151,7 +151,7 @@ uv sync --all-groups
 uv run pytest
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+See [CONTRIBUTING.md](https://github.com/AlFontal/sdcpy/blob/master/CONTRIBUTING.md) for more details.
 
 ## References
 

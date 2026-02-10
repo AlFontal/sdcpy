@@ -8,7 +8,6 @@ Welcome to sdcpy's documentation!
    readme
    installation
    usage
-   modules
    contributing
 
 Indices and tables

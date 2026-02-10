@@ -59,6 +59,22 @@ class TestExcelRoundTrip:
         finally:
             os.unlink(filepath)
 
+    def test_one_way_round_trip_preserves_mode(self, random_ts_pair):
+        """One-way analyses should remain one-way after Excel round-trip."""
+        ts1, _ = random_ts_pair
+        sdc_original = SDCAnalysis(ts1, fragment_size=10, n_permutations=9)
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            filepath = f.name
+
+        try:
+            sdc_original.to_excel(filepath)
+            sdc_loaded = SDCAnalysis.from_excel(filepath)
+            assert sdc_loaded.way == "one-way"
+            assert (sdc_loaded.sdc_df["start_1"] == sdc_loaded.sdc_df["start_2"]).sum() == 0
+        finally:
+            os.unlink(filepath)
+
     def test_different_methods(self, random_ts_pair):
         """Should preserve method information."""
         ts1, ts2 = random_ts_pair
@@ -130,7 +146,7 @@ class TestLoadFromExcelFunction:
             sdc.to_excel(filepath)
             data = load_from_excel(filepath)
 
-            expected_keys = {"ts1", "ts2", "fragment_size", "n_permutations", "method", "sdc_df"}
+            expected_keys = {"ts1", "ts2", "fragment_size", "n_permutations", "method", "way", "sdc_df"}
             assert set(data.keys()) == expected_keys
         finally:
             os.unlink(filepath)
