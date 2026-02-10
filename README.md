@@ -1,5 +1,5 @@
 # sdcpy
-[![](https://img.shields.io/pypi/v/sdcpy.svg)](https://pypi.python.com/pypi/sdcpy)
+[![](https://img.shields.io/pypi/v/sdcpy.svg)](https://pypi.org/project/sdcpy)
 ![](https://img.shields.io/pypi/pyversions/sdcpy.svg)
 ![](https://raster.shields.io/badge/license-MIT-green.png)
 ![](https://github.com/AlFontal/sdcpy/actions/workflows/run_tests.yml/badge.svg)
